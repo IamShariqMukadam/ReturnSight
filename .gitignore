@@ -1,0 +1,8 @@
+venv/
+data/
+embeddings/
+models/
+outputs/
+__pycache__/
+*.pyc
+.env
