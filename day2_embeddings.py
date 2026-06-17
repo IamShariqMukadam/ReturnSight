@@ -40,18 +40,6 @@ clip_model     = CLIPModel.from_pretrained("openai/clip-vit-base-patch32").to(DE
 clip_processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
 clip_model.eval()
 
-def extract_url(images_field):
-    try:
-        if isinstance(images_field, list) and images_field:
-            img = images_field[0]
-            if isinstance(img, dict):
-                return img.get('large') or img.get('hi_res') or img.get('thumb')
-            if isinstance(img, str):
-                return img
-    except:
-        pass
-    return None
-
 def fetch_image(url):
     try:
         r = requests.get(url, timeout=6)
@@ -61,7 +49,7 @@ def fetch_image(url):
         pass
     return None
 
-df['image_url'] = df['images'].apply(extract_url)
+# df['image_url'] = df['images'].apply(extract_url)
 df_img = df[df['image_url'].notna()].reset_index(drop=True)
 print(f"Products with image URLs: {len(df_img):,}")
 

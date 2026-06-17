@@ -35,13 +35,18 @@ for i in range(0, total, CHUNK_SIZE):
     for _, row in chunk_df.iterrows():
         asins.append(row['parent_asin'])
         imgs = row['images']
-        if isinstance(imgs, list) and imgs:
-            counts.append(len(imgs))
-            img = imgs[0]
-            if isinstance(img, dict):
-                urls.append(img.get('large') or img.get('hi_res') or img.get('thumb'))
-            else:
-                urls.append(str(img) if img else None)
+        if isinstance(imgs, dict):
+            url = None
+            for key in ['hi_res', 'large', 'thumb']:
+                lst = imgs.get(key)
+                if lst is not None and len(lst) > 0:
+                    url = str(lst[0])
+                    break
+            hi = imgs.get('hi_res')
+            lg = imgs.get('large')
+            cnt = len(hi) if hi is not None and len(hi) > 0 else (len(lg) if lg is not None and len(lg) > 0 else 0)
+            counts.append(cnt)
+            urls.append(url)
         else:
             counts.append(0)
             urls.append(None)
