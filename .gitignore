@@ -10,3 +10,6 @@ __pycache__/
 /tmp/meta_chunks/     (15 files, metadata)
 /tmp/hf_cache/        (75GB HuggingFace cache)
 /tmp/image_meta.parquetdata/processed/*.parquet
+*.log
+/tmp/
+__pycache__/
