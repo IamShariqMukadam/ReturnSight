@@ -1,3 +1,4 @@
+!pip install sentence-transformers -q
 # ============================================================
 # RETURNSIGHT — DAY 2: CLIP + SENTENCE-TRANSFORMER EMBEDDINGS
 # ============================================================
@@ -15,10 +16,11 @@
 #
 # Resume-safe: each embedding saved immediately after encoding.
 # Skips any step whose output file already exists on disk.
+# CLIP checkpointed every 100K products — safe to resume after crash.
 #
 # Compatible with:
-#   - GitHub Codespace (CPU, slow ~4-5hrs)
-#   - Kaggle Notebook  (GPU P100/T4, fast ~20mins) ← recommended
+#   - GitHub Codespace (CPU, slow ~4-5hrs, capped at 20K for CLIP)
+#   - Kaggle Notebook  (GPU P100/T4, full 610K) ← recommended
 #
 # Kaggle paths are auto-detected. Upload products_labeled.parquet
 # as a Kaggle dataset input before running.
@@ -39,9 +41,10 @@ from transformers import CLIPProcessor, CLIPModel
 from sentence_transformers import SentenceTransformer
 
 # ── CONFIG ───────────────────────────────────────────────────
-BATCH_SIZE_CLIP = 64    # per GPU batch for CLIP
-BATCH_SIZE_ST   = 256   # per GPU batch for sentence-transformer (64 on CPU)
-CPU_CLIP_CAP    = 20_000  # max products for CLIP on CPU to keep runtime < 2hrs
+BATCH_SIZE_CLIP  = 64      # per GPU batch for CLIP
+BATCH_SIZE_ST    = 256     # per GPU batch for sentence-transformer (64 on CPU)
+CKPT_EVERY       = 100_000 # save CLIP checkpoint every N products
+CPU_CLIP_CAP     = 20_000  # max products for CLIP on CPU to keep runtime < 2hrs
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -57,19 +60,20 @@ if IS_KAGGLE:
         "products_labeled.parquet not found in /kaggle/input/. "
         "Upload it as a Kaggle dataset first."
     )
-    PARQUET_PATH = parquet_candidates[0]
-    EMB_DIR      = "/kaggle/working/embeddings"
-    PROC_OUT     = "/kaggle/working"
-    # Larger batches on Kaggle GPU
+    PARQUET_PATH  = parquet_candidates[0]
+    EMB_DIR       = "/kaggle/working/embeddings"
+    PROC_OUT      = "/kaggle/working"
     BATCH_SIZE_ST = 256
 else:
-    PARQUET_PATH = "data/processed/products_labeled.parquet"
-    EMB_DIR      = "embeddings"
-    PROC_OUT     = "data/processed"
-    # Smaller batches on Codespace CPU
+    PARQUET_PATH  = "data/processed/products_labeled.parquet"
+    EMB_DIR       = "embeddings"
+    PROC_OUT      = "data/processed"
     BATCH_SIZE_ST = 64
 
+CLIP_CKPT_DIR = f"{EMB_DIR}/clip_checkpoints"
 os.makedirs(EMB_DIR, exist_ok=True)
+os.makedirs(CLIP_CKPT_DIR, exist_ok=True)
+
 print(f"Platform : {'Kaggle' if IS_KAGGLE else 'Codespace'}")
 print(f"Device   : {DEVICE}")
 print(f"Parquet  : {PARQUET_PATH}")
@@ -86,9 +90,10 @@ print(f"Return rate: {df['likely_return'].mean():.2%}")
 # ────────────────────────────────────────────────────────────
 # Extracts visual features from product images using OpenAI CLIP.
 # L2-normalized so cosine similarity = dot product downstream.
-# NOTE: Amazon CDN URLs expire — coverage may be 0% (blocked).
-# If blocked, zero embeddings are saved and the fusion model's
-# attention layer learns to ignore the image modality entirely.
+# Checkpointed every 100K products — resume-safe across crashes.
+# Amazon CDN requires browser-like headers to avoid 403 blocks.
+# On CPU: capped at 20K products to keep runtime under 2hrs.
+# On GPU: runs all products with checkpoints every 100K.
 # ────────────────────────────────────────────────────────────
 
 CLIP_EMB_PATH   = f"{EMB_DIR}/clip_embeddings.npy"
@@ -107,9 +112,17 @@ else:
     clip_model.eval()
 
     def fetch_image(url):
-        """Download and decode a single product image. Returns None on failure."""
+        """Download product image with browser-like headers to bypass Amazon CDN blocks."""
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'Referer': 'https://www.amazon.com/',
+            'Connection': 'keep-alive',
+        }
         try:
-            r = requests.get(url, timeout=6)
+            r = requests.get(url, timeout=6, headers=headers)
             if r.status_code == 200:
                 return Image.open(BytesIO(r.content)).convert('RGB')
         except Exception:
@@ -120,21 +133,48 @@ else:
     print(f"Products with image URLs: {len(df_img):,}")
 
     # CPU cap — CLIP on CPU takes ~3s/batch. 20K products ≈ 30 mins.
+    # On GPU (Kaggle) — runs all products with checkpoints every 100K.
     if DEVICE == "cpu" and len(df_img) > CPU_CLIP_CAP:
         print(
             f"No GPU detected. Capping CLIP at {CPU_CLIP_CAP:,} products "
-            f"to keep runtime under 2hrs. Full coverage requires GPU."
+            f"to keep runtime under 2hrs. Run on Kaggle GPU for full coverage."
         )
         df_img = df_img.head(CPU_CLIP_CAP).reset_index(drop=True)
 
-    clip_embs, clip_asins = [], []
+    # ── Load existing checkpoints to resume ──────────────────
+    existing_ckpts = sorted(glob.glob(f"{CLIP_CKPT_DIR}/clip_ckpt_*.npy"))
+    existing_ckpts = [f for f in existing_ckpts if '_asins' not in f]
 
-    for i in tqdm(range(0, len(df_img), BATCH_SIZE_CLIP), desc="CLIP batches"):
+    clip_embs_all  = []
+    clip_asins_all = []
+    start_product  = 0
+
+    if existing_ckpts:
+        print(f"Found {len(existing_ckpts)} existing checkpoint(s) — resuming...")
+        for ckpt_path in existing_ckpts:
+            ckpt_asins_path = ckpt_path.replace('.npy', '_asins.csv')
+            clip_embs_all.append(np.load(ckpt_path))
+            clip_asins_all.extend(
+                pd.read_csv(ckpt_asins_path)['parent_asin'].tolist()
+            )
+        start_product = len(clip_asins_all)
+        print(f"Resuming from product {start_product:,}/{len(df_img):,}")
+
+    clip_embs_batch = []
+    clip_asins      = list(clip_asins_all)
+    products_done   = start_product
+    max_workers     = 16 if DEVICE == "cuda" else 8
+
+    for i in tqdm(
+        range(start_product, len(df_img), BATCH_SIZE_CLIP),
+        desc="CLIP batches",
+        initial=start_product // BATCH_SIZE_CLIP,
+        total=len(df_img) // BATCH_SIZE_CLIP
+    ):
         batch = df_img.iloc[i:i + BATCH_SIZE_CLIP]
 
-        # Parallel image downloads — 16 workers for GPU, 8 for CPU
+        # Parallel image downloads
         images, asins = [], []
-        max_workers   = 16 if DEVICE == "cuda" else 8
         with ThreadPoolExecutor(max_workers=max_workers) as ex:
             futures = {
                 ex.submit(fetch_image, row['image_url']): row['parent_asin']
@@ -148,6 +188,7 @@ else:
                     asins.append(asin)
 
         if not images:
+            products_done += len(batch)
             continue
 
         with torch.no_grad():
@@ -157,14 +198,31 @@ else:
             vision = clip_model.vision_model(pixel_values=inp['pixel_values'])
             embs   = clip_model.visual_projection(vision.pooler_output)
             embs   = embs / embs.norm(dim=-1, keepdim=True)  # L2 normalize → unit sphere
-            clip_embs.append(embs.cpu().numpy())
+            clip_embs_batch.append(embs.cpu().numpy())
             clip_asins.extend(asins)
 
-    # Handle CDN-blocked case
-    if clip_embs:
-        clip_embeddings = np.vstack(clip_embs)
+        products_done += len(batch)
+
+        # ── Save checkpoint every CKPT_EVERY products ────────
+        if products_done % CKPT_EVERY < BATCH_SIZE_CLIP and clip_embs_batch:
+            ckpt_num       = products_done // CKPT_EVERY
+            ckpt_path      = f"{CLIP_CKPT_DIR}/clip_ckpt_{ckpt_num}.npy"
+            ckpt_asins_path = f"{CLIP_CKPT_DIR}/clip_ckpt_{ckpt_num}_asins.csv"
+
+            # Merge all checkpoints so far + current batch
+            all_so_far = clip_embs_all + clip_embs_batch
+            np.save(ckpt_path, np.vstack(all_so_far))
+            pd.DataFrame({'parent_asin': clip_asins}).to_csv(
+                ckpt_asins_path, index=False
+            )
+            print(f"\n  Checkpoint {ckpt_num} saved — {products_done:,}/{len(df_img):,} products done")
+
+    # ── Merge all batches into final embeddings ───────────────
+    all_embs = clip_embs_all + clip_embs_batch
+    if all_embs:
+        clip_embeddings = np.vstack(all_embs)
         clip_coverage   = len(clip_asins) / len(df_img)
-        print(f"CLIP coverage: {len(clip_asins):,}/{len(df_img):,} ({clip_coverage:.1%})")
+        print(f"\nCLIP coverage: {len(clip_asins):,}/{len(df_img):,} ({clip_coverage:.1%})")
         if clip_coverage < 0.50:
             print(
                 "WARNING: <50% image coverage. CDN URLs may be expired. "
@@ -178,7 +236,7 @@ else:
         clip_embeddings = np.zeros((len(df_img), 512), dtype=np.float32)
         clip_asins      = df_img['parent_asin'].tolist()
 
-    # Save immediately
+    # Save final merged embeddings
     np.save(CLIP_EMB_PATH, clip_embeddings)
     pd.Series(clip_asins, name='parent_asin').to_csv(CLIP_ASINS_PATH, index=False)
     print(f"Saved clip_embeddings.npy  shape: {clip_embeddings.shape}")
@@ -316,7 +374,8 @@ print(f"Mismatch mean (all)    : {mismatch.mean():.4f}")
 print(f"\nFiles saved to → {EMB_DIR}/")
 for fname in sorted(os.listdir(EMB_DIR)):
     fpath = f"{EMB_DIR}/{fname}"
-    size  = os.path.getsize(fpath) / 1e6
-    print(f"  {fname:<45} {size:>8.1f} MB")
+    if os.path.isfile(fpath):
+        size = os.path.getsize(fpath) / 1e6
+        print(f"  {fname:<45} {size:>8.1f} MB")
 print(f"\nUpdated parquet → {PROC_OUT}/products_with_features.parquet")
 print("\nNext step: Run day3_fusion_model.py")
