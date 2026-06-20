@@ -37,17 +37,17 @@ from sklearn.feature_extraction.text import CountVectorizer
 warnings.filterwarnings('ignore')
 
 # ── CONFIG ──────────────────────────────────────────────────
-os.environ.setdefault('HF_DATASETS_CACHE', '/tmp/hf_cache')
+os.environ.setdefault('HF_DATASETS_CACHE', os.path.expanduser('~/ReturnSight/scratch/hf_cache'))
 
 CATEGORY       = "Clothing_Shoes_and_Jewelry"
 MIN_REVIEWS    = 5
 CHUNK_SIZE     = 500_000
-CHUNK_DIR      = "/tmp/chunks"
-META_CHUNK_DIR = "/tmp/meta_chunks"
+CHUNK_DIR      = os.path.expanduser("~/ReturnSight/scratch/chunks")
+META_CHUNK_DIR = os.path.expanduser("~/ReturnSight/scratch/meta_chunks")
 PROC           = "data/processed"
 PLOTS          = "outputs/plots"
-MERGE_CKPT     = "/tmp/merge_checkpoint.parquet"
-MERGE_CKPT_IDX = "/tmp/merge_checkpoint_idx.txt"
+MERGE_CKPT     = os.path.expanduser("~/ReturnSight/scratch/merge_checkpoint.parquet")
+MERGE_CKPT_IDX = os.path.expanduser("~/ReturnSight/scratch/merge_checkpoint_idx.txt")
 CKPT_EVERY     = 15
 
 for d in [CHUNK_DIR, META_CHUNK_DIR, PROC, PLOTS, "data/raw"]:
@@ -129,6 +129,9 @@ chunk_files = sorted([
 
 if os.path.exists(MERGE_CKPT) and os.path.exists(MERGE_CKPT_IDX):
     running_agg = pd.read_parquet(MERGE_CKPT)
+    # Shrink already-merged sample_reviews too — same cap applied to new
+    # chunks below. Cuts memory footprint of the loaded checkpoint itself.
+    running_agg['sample_reviews'] = running_agg['sample_reviews'].str.slice(0, 300)
     with open(MERGE_CKPT_IDX) as f:
         start_idx = int(f.read().strip())
     print(f"  Resuming merge from checkpoint: {start_idx}/{len(chunk_files)} | Products so far: {len(running_agg):,}")
@@ -139,10 +142,18 @@ else:
 for idx in range(start_idx, len(chunk_files)):
     new_chunk = pd.read_parquet(chunk_files[idx])
 
+    # Cap sample_reviews length — it's only used for Day 2 display/mismatch
+    # text, not modeling, so 300 chars is plenty and avoids unbounded string
+    # growth as running_agg scales into the millions of rows pre-dedup.
+    new_chunk['sample_reviews'] = new_chunk['sample_reviews'].str.slice(0, 300)
+
     if running_agg is None:
         running_agg = new_chunk
     else:
-        combined    = pd.concat([running_agg, new_chunk], ignore_index=True)
+        combined = pd.concat([running_agg, new_chunk], ignore_index=True)
+        # Free old references BEFORE the groupby, not after — avoids holding
+        # running_agg + new_chunk + combined in memory simultaneously.
+        del running_agg, new_chunk
         running_agg = combined.groupby('parent_asin').agg(
             sum_rating           = ('sum_rating', 'sum'),
             review_count         = ('review_count', 'sum'),
@@ -153,7 +164,7 @@ for idx in range(start_idx, len(chunk_files)):
         ).reset_index()
         del combined
 
-    del new_chunk
+    gc.collect()
 
     if (idx + 1) % CKPT_EVERY == 0 or (idx + 1) == len(chunk_files):
         running_agg.to_parquet(MERGE_CKPT, index=False)
