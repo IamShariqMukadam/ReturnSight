@@ -131,7 +131,6 @@ if os.path.exists(MERGE_CKPT) and os.path.exists(MERGE_CKPT_IDX):
     running_agg = pd.read_parquet(MERGE_CKPT)
     # Shrink already-merged sample_reviews too — same cap applied to new
     # chunks below. Cuts memory footprint of the loaded checkpoint itself.
-    running_agg['sample_reviews'] = running_agg['sample_reviews'].str.slice(0, 300)
     with open(MERGE_CKPT_IDX) as f:
         start_idx = int(f.read().strip())
     print(f"  Resuming merge from checkpoint: {start_idx}/{len(chunk_files)} | Products so far: {len(running_agg):,}")
@@ -145,7 +144,6 @@ for idx in range(start_idx, len(chunk_files)):
     # Cap sample_reviews length — it's only used for Day 2 display/mismatch
     # text, not modeling, so 300 chars is plenty and avoids unbounded string
     # growth as running_agg scales into the millions of rows pre-dedup.
-    new_chunk['sample_reviews'] = new_chunk['sample_reviews'].str.slice(0, 300)
 
     if running_agg is None:
         running_agg = new_chunk
