@@ -11,9 +11,12 @@
 #     'sample_reviews' field (that field is only kept for Day 2's
 #     mismatch-score text, display purposes). Full-text scan, not
 #     a 3-sample shortcut.
-#   - avg_rating / one_star_pct / five_star_pct are kept as real,
-#     leakage-free Day 3 features again since the label no longer
-#     depends on them.
+#   - avg_rating / one_star_pct / five_star_pct / rating_std are kept
+#     as real, leakage-free Day 3 features since the label no longer
+#     depends on them. rating_std is computed via a sum-of-squared-
+#     ratings aggregate tracked alongside sum_rating at every level
+#     (chunk -> merge -> final), so per-product rating variance is a
+#     real signal rather than a placeholder.
 #   - Image bug fixed inline: HF 'images' field is a DICT of arrays
 #     (hi_res/large/thumb/variant), not a list of dicts.
 #   - Every expensive step (review chunk download+aggregate, meta
@@ -21,7 +24,16 @@
 #     first and skips it — this is the checkpoint/resume mechanism.
 #     Nothing was deleted from the original pipeline; skip-if-exists
 #     guards were added around it instead.
-# RUN ON CODESPACE (not Kaggle) — CPU/disk-bound, ~85GB scratch peak.
+#   - Merge loop frees running_agg/new_chunk before the groupby (not
+#     after) and runs gc.collect() every iteration — avoids holding
+#     multiple multi-million-row copies in memory simultaneously.
+#   - Merged chunk files are deleted right after their checkpoint is
+#     safely written — only ever deletes data already durably
+#     persisted in MERGE_CKPT, so resume-safety is unaffected. Keeps
+#     scratch-disk usage from growing unbounded across a long run.
+# RUN ON EC2 (CPU/disk-bound) — scratch dir lives on the EBS root
+# volume (~/ReturnSight/scratch/), not /tmp (often a small tmpfs
+# mount with far less room than the real disk).
 # ============================================================
 
 import os, gc, re, warnings
@@ -108,6 +120,7 @@ for i in range(0, len(rev_ds), CHUNK_SIZE):
 
     stats = chunk.groupby('parent_asin').agg(
         sum_rating           = ('rating', 'sum'),
+        sum_sq_rating         = ('rating', lambda x: (x**2).sum()),
         review_count         = ('rating', 'count'),
         one_star_count       = ('rating', lambda x: (x == 1).sum()),
         five_star_count      = ('rating', lambda x: (x == 5).sum()),
@@ -129,8 +142,6 @@ chunk_files = sorted([
 
 if os.path.exists(MERGE_CKPT) and os.path.exists(MERGE_CKPT_IDX):
     running_agg = pd.read_parquet(MERGE_CKPT)
-    # Shrink already-merged sample_reviews too — same cap applied to new
-    # chunks below. Cuts memory footprint of the loaded checkpoint itself.
     with open(MERGE_CKPT_IDX) as f:
         start_idx = int(f.read().strip())
     print(f"  Resuming merge from checkpoint: {start_idx}/{len(chunk_files)} | Products so far: {len(running_agg):,}")
@@ -141,10 +152,6 @@ else:
 for idx in range(start_idx, len(chunk_files)):
     new_chunk = pd.read_parquet(chunk_files[idx])
 
-    # Cap sample_reviews length — it's only used for Day 2 display/mismatch
-    # text, not modeling, so 300 chars is plenty and avoids unbounded string
-    # growth as running_agg scales into the millions of rows pre-dedup.
-
     if running_agg is None:
         running_agg = new_chunk
     else:
@@ -154,6 +161,7 @@ for idx in range(start_idx, len(chunk_files)):
         del running_agg, new_chunk
         running_agg = combined.groupby('parent_asin').agg(
             sum_rating           = ('sum_rating', 'sum'),
+            sum_sq_rating         = ('sum_sq_rating', 'sum'),
             review_count         = ('review_count', 'sum'),
             one_star_count       = ('one_star_count', 'sum'),
             five_star_count      = ('five_star_count', 'sum'),
@@ -170,6 +178,17 @@ for idx in range(start_idx, len(chunk_files)):
             f.write(str(idx + 1))
         print(f"  Merged {idx+1}/{len(chunk_files)} | Unique products: {len(running_agg):,} | checkpoint saved")
 
+        # Delete chunk files now that they're safely folded into MERGE_CKPT —
+        # only deletes data already durably persisted elsewhere, so resume
+        # safety is unaffected. Fixes unbounded scratch-disk growth.
+        deleted = 0
+        for cf in chunk_files[:idx + 1]:
+            if os.path.exists(cf):
+                os.remove(cf)
+                deleted += 1
+        if deleted:
+            print(f"    Cleaned up {deleted} merged chunk file(s) from disk")
+
 product_stats = running_agg.copy()
 del running_agg
 gc.collect()
@@ -180,6 +199,12 @@ product_stats['avg_rating']          = product_stats['sum_rating'] / product_sta
 product_stats['one_star_pct']        = product_stats['one_star_count'] / product_stats['review_count']
 product_stats['five_star_pct']       = product_stats['five_star_count'] / product_stats['review_count']
 product_stats['return_mention_rate'] = product_stats['return_mention_count'] / product_stats['review_count']
+
+# True per-product rating variance — needs sum_sq_rating tracked at every
+# aggregation level above. variance = E[x^2] - (E[x])^2, clipped to guard
+# against tiny negative values from floating-point error.
+variance = (product_stats['sum_sq_rating'] / product_stats['review_count']) - product_stats['avg_rating']**2
+product_stats['rating_std'] = np.sqrt(variance.clip(lower=0))
 
 product_stats = product_stats[
     product_stats['review_count'] >= MIN_REVIEWS
@@ -308,7 +333,7 @@ save_cols = [
     'five_star_pct', 'price', 'price_anomaly', 'main_category',
     'title', 'description', 'image_url', 'image_count',
     'sample_reviews', 'return_mention_count', 'return_mention_rate',
-    'likely_return'
+    'rating_std', 'likely_return'
 ]
 df[save_cols].to_parquet(f"{PROC}/products_labeled.parquet", index=False)
 print(f"\nSaved → {PROC}/products_labeled.parquet")
