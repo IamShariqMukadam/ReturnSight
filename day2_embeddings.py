@@ -1,4 +1,4 @@
-!pip install sentence-transformers -q
+#!pip install sentence-transformers -q
 # ============================================================
 # RETURNSIGHT — DAY 2: CLIP + SENTENCE-TRANSFORMER EMBEDDINGS
 # ============================================================
@@ -68,7 +68,7 @@ else:
     PARQUET_PATH  = "data/processed/products_labeled.parquet"
     EMB_DIR       = "embeddings"
     PROC_OUT      = "data/processed"
-    BATCH_SIZE_ST = 64
+    BATCH_SIZE_ST = 256 if DEVICE == "cuda" else 64
 
 CLIP_CKPT_DIR = f"{EMB_DIR}/clip_checkpoints"
 os.makedirs(EMB_DIR, exist_ok=True)
