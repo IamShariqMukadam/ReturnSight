@@ -182,7 +182,7 @@ pos_weight = torch.tensor(
 criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
 optimizer = torch.optim.Adam(fusion_model.parameters(), lr=1e-3, weight_decay=1e-4)
 scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-    optimizer, mode='max', patience=3, factor=0.5, verbose=False
+    optimizer, mode='max', patience=3, factor=0.5
 )
 
 # ── 8. TRAIN FUSION MODEL ────────────────────────────────────
