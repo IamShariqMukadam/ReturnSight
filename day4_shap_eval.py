@@ -21,13 +21,25 @@ warnings.filterwarnings('ignore')
 optuna.logging.set_verbosity(optuna.logging.WARNING)
 
 # ── CONFIG ──────────────────────────────────────────────────
-MODELS_DIR   = "models"
-PLOTS_DIR    = "outputs/plots"
-SHAP_DIR     = "outputs/shap"
+import glob
+IS_KAGGLE = os.path.exists("/kaggle/working")
+if IS_KAGGLE:
+    cands = glob.glob("/kaggle/input/**/lgbm_classifier.pkl", recursive=True)
+    assert cands, "lgbm_classifier.pkl not found under /kaggle/input/ — attach Day 3's output dataset."
+    MODELS_IN  = os.path.dirname(cands[0])   # read-only, Day 3 outputs
+    MODELS_DIR = "/kaggle/working/models"    # writable, this script's outputs
+    PLOTS_DIR  = "/kaggle/working/outputs/plots"
+    SHAP_DIR   = "/kaggle/working/outputs/shap"
+else:
+    MODELS_IN  = "models"
+    MODELS_DIR = "models"
+    PLOTS_DIR  = "outputs/plots"
+    SHAP_DIR   = "outputs/shap"
 FUSE_DIM     = 128
 N_OPTUNA     = 50
-for d in [PLOTS_DIR, SHAP_DIR]:
+for d in [MODELS_DIR, PLOTS_DIR, SHAP_DIR]:
     os.makedirs(d, exist_ok=True)
+print(f"Platform: {'Kaggle' if IS_KAGGLE else 'Local'} | Models in: {MODELS_IN} | Out: {MODELS_DIR}")
 
 TAB_FEATURES = [
     'avg_rating', 'one_star_pct', 'five_star_pct', 'rating_std',
@@ -37,14 +49,14 @@ TAB_DIM      = len(TAB_FEATURES)                          # 8
 FEATURE_NAMES = [f'fused_{i}' for i in range(FUSE_DIM)] + TAB_FEATURES
 
 # ── 1. LOAD ──────────────────────────────────────────────────
-lgb_model   = pickle.load(open(f"{MODELS_DIR}/lgbm_classifier.pkl", 'rb'))
-X_train     = np.load(f"{MODELS_DIR}/X_train.npy")
-X_val       = np.load(f"{MODELS_DIR}/X_val.npy")
-X_test      = np.load(f"{MODELS_DIR}/X_test.npy")
-y_train     = np.load(f"{MODELS_DIR}/y_train.npy")
-y_val       = np.load(f"{MODELS_DIR}/y_val.npy")
-y_test      = np.load(f"{MODELS_DIR}/y_test.npy")
-y_pred_prob = np.load(f"{MODELS_DIR}/y_pred_prob_test.npy")
+lgb_model   = pickle.load(open(f"{MODELS_IN}/lgbm_classifier.pkl", 'rb'))
+X_train     = np.load(f"{MODELS_IN}/X_train.npy")
+X_val       = np.load(f"{MODELS_IN}/X_val.npy")
+X_test      = np.load(f"{MODELS_IN}/X_test.npy")
+y_train     = np.load(f"{MODELS_IN}/y_train.npy")
+y_val       = np.load(f"{MODELS_IN}/y_val.npy")
+y_test      = np.load(f"{MODELS_IN}/y_test.npy")
+y_pred_prob = np.load(f"{MODELS_IN}/y_pred_prob_test.npy")
 
 print(f"Test set: {len(y_test):,} | Return rate: {y_test.mean():.2%}")
 
