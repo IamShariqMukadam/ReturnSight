@@ -7,10 +7,10 @@
 #     (fake AUC 1.0000). Fixed by building the label from EXPLICIT
 #     RETURN LANGUAGE found in review text instead.
 #   - The regex is applied to chunk['text'] — i.e. EVERY verified
-#     review row in every 500K chunk — NOT the 3-review
+#     review row in every 500K chunk — NOT the 8-review
 #     'sample_reviews' field (that field is only kept for Day 2's
 #     mismatch-score text, display purposes). Full-text scan, not
-#     a 3-sample shortcut.
+#     a sample-based shortcut.
 #   - avg_rating / one_star_pct / five_star_pct / rating_std are kept
 #     as real, leakage-free Day 3 features since the label no longer
 #     depends on them. rating_std is computed via a sum-of-squared-
@@ -31,6 +31,24 @@
 #     safely written — only ever deletes data already durably
 #     persisted in MERGE_CKPT, so resume-safety is unaffected. Keeps
 #     scratch-disk usage from growing unbounded across a long run.
+#   - LABEL FIX (this version): likely_return now uses
+#     return_mention_RATE (>= 2%) instead of a raw return_mention_COUNT
+#     (>= 1). The raw-count version meant a single return-mention review
+#     out of a product's *entire* review history (could be thousands)
+#     flipped the whole product to label=1 — i.e. the label was
+#     mechanically biased toward high-review-count products regardless
+#     of their true return rate. Rate-based thresholding fixes that.
+#     Tune REVIEW_RATE_THRESHOLD below if the resulting class balance
+#     looks off after running.
+#   - SAMPLE SIZE FIX (this version): sample_reviews now stores the
+#     first 30 verified reviews per product (was 3, then 8). Raised
+#     further because Day 2 now MEAN-POOLS each review's embedding
+#     individually instead of concatenating all reviews into one string
+#     and encoding once — concatenation hit a hard ceiling at the
+#     sentence-transformer's 256-token limit, so going past ~8 reviews
+#     was previously pointless (silently truncated away). Pooling has
+#     no such ceiling, so 30 now gives meaningfully more coverage for
+#     high-volume products, not just low-volume ones.
 # RUN ON EC2 (CPU/disk-bound) — scratch dir lives on the EBS root
 # volume (~/ReturnSight/scratch/), not /tmp (often a small tmpfs
 # mount with far less room than the real disk).
@@ -61,6 +79,8 @@ PLOTS          = "outputs/plots"
 MERGE_CKPT     = os.path.expanduser("~/ReturnSight/scratch/merge_checkpoint.parquet")
 MERGE_CKPT_IDX = os.path.expanduser("~/ReturnSight/scratch/merge_checkpoint_idx.txt")
 CKPT_EVERY     = 15
+SAMPLE_REVIEWS_N        = 30    # was 3, then 8 — see Fix A note above
+REVIEW_RATE_THRESHOLD   = 0.02  # label fix: rate-based, not raw count >= 1
 
 for d in [CHUNK_DIR, META_CHUNK_DIR, PROC, PLOTS, "data/raw"]:
     os.makedirs(d, exist_ok=True)
@@ -113,7 +133,7 @@ for i in range(0, len(rev_ds), CHUNK_SIZE):
         del chunk
         continue
 
-    # Full-text scan, every review row — NOT the 3-sample field
+    # Full-text scan, every review row — NOT the sample field
     chunk['mentions_return'] = chunk['text'].str.contains(
         RETURN_PATTERN, na=False
     ).astype(int)
@@ -125,7 +145,7 @@ for i in range(0, len(rev_ds), CHUNK_SIZE):
         one_star_count       = ('rating', lambda x: (x == 1).sum()),
         five_star_count      = ('rating', lambda x: (x == 5).sum()),
         return_mention_count = ('mentions_return', 'sum'),
-        sample_reviews       = ('text',   lambda x: ' | '.join(x.head(3).tolist()))
+        sample_reviews       = ('text',   lambda x: ' | '.join(x.head(SAMPLE_REVIEWS_N).tolist()))
     ).reset_index()
 
     stats.to_parquet(chunk_path, index=False)
@@ -212,10 +232,17 @@ product_stats = product_stats[
 print(f"\nUnique products (>={MIN_REVIEWS} verified reviews): {len(product_stats):,}")
 
 # ── LABEL — built from explicit return-mention text, NOT ratings ──
-product_stats['likely_return'] = (product_stats['return_mention_count'] >= 1).astype(int)
+# RATE-based (>= REVIEW_RATE_THRESHOLD), not raw count >= 1. A raw-count
+# threshold meant one return-mention out of e.g. 3,933 reviews (0.025%)
+# weighed exactly the same as one out of 5 (20%) — mechanically biasing
+# the label toward high-review-count products regardless of true return
+# rate. Rate-based thresholding removes that bias.
+product_stats['likely_return'] = (
+    product_stats['return_mention_rate'] >= REVIEW_RATE_THRESHOLD
+).astype(int)
 return_rate = product_stats['likely_return'].mean()
-print(f"\nReturn rate (explicit return-mention label): {return_rate:.2%}")
-print(f"Products with >=1 explicit return mention: {product_stats['likely_return'].sum():,}")
+print(f"\nReturn rate (rate-based label, threshold={REVIEW_RATE_THRESHOLD:.1%}): {return_rate:.2%}")
+print(f"Products flagged likely_return=1: {product_stats['likely_return'].sum():,}")
 
 # ── 3. LOAD METADATA + EXTRACT IMAGES (dict-of-arrays fix, resumable) ──
 print("\nLoading metadata...")
@@ -393,6 +420,6 @@ print(df[['avg_rating', 'one_star_pct', 'review_count',
 print(f"\nFinal dataset       : {len(df):,} products")
 print(f"Return class balance: {df['likely_return'].value_counts(normalize=True).round(3).to_dict()}")
 print(f"Null prices remaining: {df['price'].isna().sum()}")
-print("\nLabel built from explicit return-mention text (full reviews, all rows) —")
+print("\nLabel built from explicit return-mention RATE (full reviews, all rows) —")
 print("independent of avg_rating/one_star_pct/five_star_pct, now safe Day 3 features.")
 print("\nDay 1 complete. Run day2_embeddings.py next.")

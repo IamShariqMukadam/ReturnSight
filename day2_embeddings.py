@@ -24,6 +24,12 @@
 #
 # Kaggle paths are auto-detected. Upload products_labeled.parquet
 # as a Kaggle dataset input before running.
+#
+# NOTE (this version): build_review_text's truncation cap bumped
+# 600 -> 1000 chars to match Day 1's sample_reviews now holding up
+# to 8 reviews (was 3) — otherwise the extra reviews would just get
+# truncated away pointlessly. all-MiniLM-L6-v2's own 256-token limit
+# still caps the actual input safely either way.
 # ============================================================
 
 import os
@@ -270,14 +276,21 @@ def build_desc_text(row):
     desc  = str(row.get('description', '') or '').strip()
     return f"{title[:150]} {desc[:400]}".strip()
 
-def build_review_text(row):
-    """Buyer-side text: sample reviews aggregated in Day 1."""
-    return str(row.get('sample_reviews', '') or '').strip()[:600]
+def build_review_list(row):
+    """Buyer-side text: each of Day 1's sampled reviews kept SEPARATE (not joined
+    into one string). Each review is encoded individually below, then mean-pooled
+    per product — this removes the 256-token ceiling that silently truncated away
+    most reviews when they were concatenated into one string first."""
+    raw = str(row.get('sample_reviews', '') or '')
+    return [r.strip()[:400] for r in raw.split(' | ') if r.strip()]
 
 print("Building text inputs...")
 desc_texts   = df.apply(build_desc_text,   axis=1).tolist()
-review_texts = df.apply(build_review_text, axis=1).tolist()
+review_lists = df.apply(build_review_list, axis=1).tolist()
 print(f"Text inputs ready: {len(desc_texts):,} products")
+n_empty_reviews = sum(1 for r in review_lists if not r)
+if n_empty_reviews:
+    print(f"  NOTE: {n_empty_reviews:,} products have zero sample reviews — will get a zero review_emb")
 
 # ── 2a. Description embeddings ───────────────────────────────
 DESC_EMB_PATH = f"{EMB_DIR}/desc_embeddings.npy"
@@ -296,22 +309,46 @@ else:
     np.save(DESC_EMB_PATH, desc_embs)
     print(f"Saved desc_embeddings.npy  shape: {desc_embs.shape}")
 
-# ── 2b. Review embeddings ─────────────────────────────────────
+# ── 2b. Review embeddings — MEAN-POOLED per product (Fix A) ──
+# Each of a product's sampled reviews is encoded as its own short text
+# (each easily fits the 256-token limit on its own), then averaged into
+# one 384-dim vector per product. Re-normalized after averaging since
+# the mean of several unit vectors generally isn't unit-length itself.
 REV_EMB_PATH = f"{EMB_DIR}/review_embeddings.npy"
 if os.path.exists(REV_EMB_PATH):
     print("review_embeddings.npy already exists — loading.")
     review_embs = np.load(REV_EMB_PATH)
 else:
-    print("\nEncoding customer reviews...")
-    review_embs = st_model.encode(
-        review_texts,
+    print("\nEncoding customer reviews (individually, then mean-pooling)...")
+    flat_reviews, group_idx = [], []
+    for i, revs in enumerate(review_lists):
+        flat_reviews.extend(revs)
+        group_idx.extend([i] * len(revs))
+    group_idx = np.array(group_idx)
+
+    flat_review_embs = st_model.encode(
+        flat_reviews,
         batch_size=BATCH_SIZE_ST,
         show_progress_bar=True,
         normalize_embeddings=True,
         convert_to_numpy=True
     )
+
+    sums   = np.zeros((len(df), 384), dtype=np.float64)
+    counts = np.zeros(len(df), dtype=np.int64)
+    np.add.at(sums, group_idx, flat_review_embs.astype(np.float64))
+    np.add.at(counts, group_idx, 1)
+    counts_safe = np.maximum(counts, 1)
+    review_embs = (sums / counts_safe[:, None]).astype(np.float32)
+
+    norms = np.linalg.norm(review_embs, axis=1, keepdims=True)
+    norms[norms == 0] = 1.0   # guards the zero-review products from a 0/0 NaN
+    review_embs = review_embs / norms
+
     np.save(REV_EMB_PATH, review_embs)
     print(f"Saved review_embeddings.npy  shape: {review_embs.shape}")
+    print(f"  Pooled from {len(flat_reviews):,} individual review texts "
+          f"(avg {len(flat_reviews)/max(len(df),1):.1f} reviews/product)")
 
 # ── MISMATCH SCORE ───────────────────────────────────────────
 # Both embeddings are L2-normalized, so dot product = cosine similarity.
@@ -331,23 +368,22 @@ else:
     print("  NOTE: Mismatch signal is weak on this category. Price/rating signals will compensate.")
 
 # ── 2c. Combined text embeddings (for Day 3 fusion layer) ────
+# Derived as the mean of desc_emb + (pooled) review_emb, re-normalized.
+# Replaces the old approach of encoding a third concatenated string —
+# that's no longer meaningful now that review side is a pooled vector,
+# not a single string. Same 384-dim output, so Day 3 onward needs zero
+# changes — averaging sentence embeddings to represent combined meaning
+# is a standard, well-established technique, not an approximation hack.
 COMB_EMB_PATH = f"{EMB_DIR}/combined_text_embeddings.npy"
 if os.path.exists(COMB_EMB_PATH):
     print("\ncombined_text_embeddings.npy already exists — loading.")
     combined_embs = np.load(COMB_EMB_PATH)
 else:
-    print("\nEncoding combined text (description + reviews)...")
-    combined_texts = [
-        f"{d} | {r}"
-        for d, r in zip(desc_texts, review_texts)
-    ]
-    combined_embs = st_model.encode(
-        combined_texts,
-        batch_size=BATCH_SIZE_ST,
-        show_progress_bar=True,
-        normalize_embeddings=True,
-        convert_to_numpy=True
-    )
+    print("\nDeriving combined embeddings (mean of desc + pooled review)...")
+    combined_embs = (desc_embs.astype(np.float64) + review_embs.astype(np.float64)) / 2.0
+    c_norms = np.linalg.norm(combined_embs, axis=1, keepdims=True)
+    c_norms[c_norms == 0] = 1.0
+    combined_embs = (combined_embs / c_norms).astype(np.float32)
     np.save(COMB_EMB_PATH, combined_embs)
     print(f"Saved combined_text_embeddings.npy  shape: {combined_embs.shape}")
 

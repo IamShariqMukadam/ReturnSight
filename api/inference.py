@@ -6,6 +6,7 @@ from PIL import Image
 from api import model_loader as ml
 
 FUSE_DIM = 128
+MAX_REVIEWS = 30   # must match Day 1's SAMPLE_REVIEWS_N
 TAB_FEATURES = [
     'avg_rating', 'one_star_pct', 'five_star_pct', 'rating_std',
     'log_review_count', 'price_anomaly', 'review_desc_mismatch', 'has_clip'
@@ -33,18 +34,43 @@ def predict(req) -> dict:
     five_star_pct = float(np.mean([r == 5 for r in ratings])) if ratings else 0.0
     rating_std    = float(np.std(ratings))          if len(ratings) > 1 else 0.0
     log_review_count = float(np.log1p(len(ratings)))
-    price_anomaly = 1.0   # neutral default — no category median at inference time
+
+    # price_anomaly — real category-median lookup (built by build_price_lookup.py
+    # from Day 1/3's training data), not a hardcoded stub. Falls back to the
+    # global median for any category not seen during training.
+    cat_median = ml.price_lookup["by_category"].get(
+        req.category, ml.price_lookup["global"]
+    )
+    price_anomaly = float(req.price / (cat_median + 1e-6))
 
     # ── 2. TEXT EMBEDDINGS + MISMATCH SCORE ─────────────────
-    desc_text   = f"{req.title} {req.description}"[:600]
-    review_text = ' | '.join(texts[:5])[:600]
-    combined    = f"{desc_text} | {review_text}"
+    # Must mirror Day 2's Fix A exactly: encode each review individually
+    # and mean-pool, NOT concatenate-then-truncate — that's what removed
+    # the 256-token ceiling on the training side, so serving has to match.
+    title_part = req.title.strip()[:150]
+    desc_part  = req.description.strip()[:400]
+    desc_text  = f"{title_part} {desc_part}".strip()
 
-    desc_emb, review_emb, combined_emb = ml.st_model.encode(
-        [desc_text, review_text, combined],
+    review_texts_individual = [t.strip()[:400] for t in texts if t.strip()][:MAX_REVIEWS]
+    if not review_texts_individual:
+        review_texts_individual = [""]   # avoids encode() on an empty list
+
+    all_embs = ml.st_model.encode(
+        [desc_text] + review_texts_individual,
         normalize_embeddings=True,
         show_progress_bar=False
     )
+    desc_emb = all_embs[0]
+
+    review_emb = np.mean(all_embs[1:], axis=0)
+    r_norm = np.linalg.norm(review_emb)
+    if r_norm > 0:
+        review_emb = review_emb / r_norm
+
+    combined_emb = (desc_emb + review_emb) / 2.0
+    c_norm = np.linalg.norm(combined_emb)
+    if c_norm > 0:
+        combined_emb = combined_emb / c_norm
 
     review_desc_mismatch = float(1 - np.dot(desc_emb, review_emb))
 
@@ -114,7 +140,7 @@ def predict(req) -> dict:
         'review_mismatch':   f"Reviews contradict the product description (mismatch score: {review_desc_mismatch:.2f})",
         'avg_rating':        f"Low average rating ({avg_rating:.1f}/5) from {len(ratings)} reviews",
         'one_star_pct':      f"High 1-star review rate ({one_star_pct:.0%})",
-        'price_anomaly':     f"Suspicious pricing relative to category average",
+        'price_anomaly':     f"Suspicious pricing relative to category average (price/median ratio: {price_anomaly:.2f})",
         'image_text_fusion': f"Combined image and text signals indicate listing quality issues",
     }
 

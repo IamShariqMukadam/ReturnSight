@@ -34,26 +34,30 @@ class AttentionFusion(nn.Module):
 
 
 # ── Global model objects (loaded once at startup) ─────────────
-pca_clip    = None
-pca_text    = None
-scaler      = None
-tab_names   = None
-fusion      = None
-lgbm        = None
-shap_exp    = None
-st_model    = None
-clip_model  = None
-clip_proc   = None
+pca_clip     = None
+pca_text     = None
+scaler       = None
+tab_names    = None
+fusion       = None
+lgbm         = None
+shap_exp     = None
+st_model     = None
+clip_model   = None
+clip_proc    = None
+price_lookup = None   # {"by_category": {...}, "global": float} — see build_price_lookup.py
 
 def load_all():
     global pca_clip, pca_text, scaler, tab_names
-    global fusion, lgbm, shap_exp, st_model, clip_model, clip_proc
+    global fusion, lgbm, shap_exp, st_model, clip_model, clip_proc, price_lookup
 
     print("Loading PCA + scaler...")
     pca_clip  = pickle.load(open(f"{MODELS_DIR}/pca_clip.pkl",          "rb"))
     pca_text  = pickle.load(open(f"{MODELS_DIR}/pca_text.pkl",          "rb"))
     scaler    = pickle.load(open(f"{MODELS_DIR}/scaler.pkl",            "rb"))
     tab_names = pickle.load(open(f"{MODELS_DIR}/tab_feature_names.pkl", "rb"))
+
+    print("Loading price lookup...")
+    price_lookup = pickle.load(open(f"{MODELS_DIR}/category_price_median.pkl", "rb"))
 
     print("Loading fusion model...")
     fusion = AttentionFusion(PCA_DIM, PCA_DIM, TAB_DIM, FUSE_DIM).to(DEVICE)
