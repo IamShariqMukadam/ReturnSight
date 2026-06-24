@@ -320,35 +320,50 @@ if os.path.exists(REV_EMB_PATH):
     review_embs = np.load(REV_EMB_PATH)
 else:
     print("\nEncoding customer reviews (individually, then mean-pooling)...")
-    flat_reviews, group_idx = [], []
-    for i, revs in enumerate(review_lists):
-        flat_reviews.extend(revs)
-        group_idx.extend([i] * len(revs))
-    group_idx = np.array(group_idx)
+    # Processed in PRODUCT batches, not all-at-once — flattening every
+    # individual review across all 610K products before encoding could mean
+    # holding 10-25GB+ of embeddings in memory simultaneously (up to 30
+    # reviews x 610K products), risking an OOM crash. Each batch's raw
+    # embeddings are pooled down to one small per-product vector and
+    # discarded before the next batch starts, so peak memory stays bounded
+    # regardless of total review count.
+    REVIEW_BATCH_PRODUCTS = 20_000
+    N = len(df)
+    review_embs = np.zeros((N, 384), dtype=np.float32)
+    total_reviews_encoded = 0
 
-    flat_review_embs = st_model.encode(
-        flat_reviews,
-        batch_size=BATCH_SIZE_ST,
-        show_progress_bar=True,
-        normalize_embeddings=True,
-        convert_to_numpy=True
-    )
+    for start in tqdm(range(0, N, REVIEW_BATCH_PRODUCTS), desc="Review-pooling batches"):
+        end = min(start + REVIEW_BATCH_PRODUCTS, N)
+        batch_lists = review_lists[start:end]
 
-    sums   = np.zeros((len(df), 384), dtype=np.float64)
-    counts = np.zeros(len(df), dtype=np.int64)
-    np.add.at(sums, group_idx, flat_review_embs.astype(np.float64))
-    np.add.at(counts, group_idx, 1)
-    counts_safe = np.maximum(counts, 1)
-    review_embs = (sums / counts_safe[:, None]).astype(np.float32)
+        flat, offsets = [], [0]
+        for revs in batch_lists:
+            flat.extend(revs)
+            offsets.append(len(flat))
 
-    norms = np.linalg.norm(review_embs, axis=1, keepdims=True)
-    norms[norms == 0] = 1.0   # guards the zero-review products from a 0/0 NaN
-    review_embs = review_embs / norms
+        if flat:
+            batch_embs = st_model.encode(
+                flat, batch_size=BATCH_SIZE_ST, show_progress_bar=False,
+                normalize_embeddings=True, convert_to_numpy=True
+            )
+            total_reviews_encoded += len(flat)
+
+            for j in range(end - start):
+                lo, hi = offsets[j], offsets[j + 1]
+                if hi > lo:
+                    v = batch_embs[lo:hi].mean(axis=0)
+                    n = np.linalg.norm(v)
+                    if n > 0:
+                        v = v / n
+                    review_embs[start + j] = v
+            del batch_embs
+        del flat, offsets
+        gc.collect()
 
     np.save(REV_EMB_PATH, review_embs)
     print(f"Saved review_embeddings.npy  shape: {review_embs.shape}")
-    print(f"  Pooled from {len(flat_reviews):,} individual review texts "
-          f"(avg {len(flat_reviews)/max(len(df),1):.1f} reviews/product)")
+    print(f"  Pooled from {total_reviews_encoded:,} individual review texts "
+          f"(avg {total_reviews_encoded/max(N,1):.1f} reviews/product)")
 
 # ── MISMATCH SCORE ───────────────────────────────────────────
 # Both embeddings are L2-normalized, so dot product = cosine similarity.
