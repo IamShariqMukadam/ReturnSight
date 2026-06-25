@@ -186,7 +186,14 @@ for idx in range(start_idx, len(chunk_files)):
             one_star_count       = ('one_star_count', 'sum'),
             five_star_count      = ('five_star_count', 'sum'),
             return_mention_count = ('return_mention_count', 'sum'),
-            sample_reviews       = ('sample_reviews', 'first')
+            # FIX: was ('sample_reviews', 'first') — discarded every chunk's
+            # partial sample except whichever showed up first in the concat, since
+            # one product's reviews are scattered across many chunks. Now flattens
+            # both sides' partial samples and re-caps at SAMPLE_REVIEWS_N, so the
+            # running total genuinely accumulates across all chunks.
+            sample_reviews       = ('sample_reviews', lambda s: ' | '.join(
+                [r for txt in s for r in str(txt).split(' | ') if r.strip()][:SAMPLE_REVIEWS_N]
+            ))
         ).reset_index()
         del combined
 
