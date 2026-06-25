@@ -160,16 +160,18 @@ chunk_files = sorted([
     if os.path.exists(f"{CHUNK_DIR}/chunk_{i}.parquet")
 ])
 
-if os.path.exists(MERGE_CKPT) and os.path.exists(MERGE_CKPT_IDX):
+if os.path.exists(MERGE_CKPT):
     running_agg = pd.read_parquet(MERGE_CKPT)
-    with open(MERGE_CKPT_IDX) as f:
-        start_idx = int(f.read().strip())
-    print(f"  Resuming merge from checkpoint: {start_idx}/{len(chunk_files)} | Products so far: {len(running_agg):,}")
+    print(f"  Resuming merge from checkpoint | Products so far: {len(running_agg):,} | Remaining chunk files on disk: {len(chunk_files)}")
+    # FIX: was resuming from a stored loop-position (MERGE_CKPT_IDX). That goes
+    # stale because merged chunk files get DELETED after each checkpoint -- on
+    # restart chunk_files rebuilds shorter, so the old position no longer lines
+    # up and can silently skip remaining chunks. Whatever's left on disk IS
+    # "not yet merged" by construction, so just start at 0, no position needed.
 else:
     running_agg = None
-    start_idx   = 0
 
-for idx in range(start_idx, len(chunk_files)):
+for idx in range(len(chunk_files)):
     new_chunk = pd.read_parquet(chunk_files[idx])
 
     if running_agg is None:
@@ -201,8 +203,6 @@ for idx in range(start_idx, len(chunk_files)):
 
     if (idx + 1) % CKPT_EVERY == 0 or (idx + 1) == len(chunk_files):
         running_agg.to_parquet(MERGE_CKPT, index=False)
-        with open(MERGE_CKPT_IDX, 'w') as f:
-            f.write(str(idx + 1))
         print(f"  Merged {idx+1}/{len(chunk_files)} | Unique products: {len(running_agg):,} | checkpoint saved")
 
         # Delete chunk files now that they're safely folded into MERGE_CKPT —
