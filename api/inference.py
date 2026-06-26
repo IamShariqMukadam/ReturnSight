@@ -67,11 +67,8 @@ def predict(req) -> dict:
         if r_norm > 0:
             review_emb = review_emb / r_norm
     else:
-        # FIX: was encoding "" as a stand-in, which produces some arbitrary
-        # nonzero embedding the model never saw paired with this case. Day 2
-        # pre-allocates review_embs as np.zeros and never writes to it when a
-        # product has no usable review text -- so "no reviews" at training
-        # time is a TRUE zero vector. Match that exactly here.
+        # No usable review text -> true zero vector, matching Day 2's
+        # pre-allocated np.zeros that's never written to in this case.
         review_emb = np.zeros(384, dtype=np.float32)
 
     combined_emb = (desc_emb + review_emb) / 2.0
@@ -89,9 +86,16 @@ def predict(req) -> dict:
         img = _fetch_image(req.image_url)
         if img:
             with torch.no_grad():
-                inp  = ml.clip_proc(images=[img], return_tensors="pt").to(device)
-                emb  = ml.clip_model.get_image_features(**inp)
-                emb  = emb / emb.norm(dim=-1, keepdim=True)
+                inp    = ml.clip_proc(images=[img], return_tensors="pt").to(device)
+                # FIX: get_image_features(**inp) was returning the raw vision-model
+                # output (BaseModelOutputWithPooling) instead of the final projected
+                # tensor in this transformers version, crashing on .norm(). Day 2's
+                # CLIP step never hits this because it already does the same two
+                # manual steps below instead of calling get_image_features(). Match
+                # that proven path exactly so training and serving stay consistent.
+                vision = ml.clip_model.vision_model(pixel_values=inp['pixel_values'])
+                emb    = ml.clip_model.visual_projection(vision.pooler_output)
+                emb    = emb / emb.norm(dim=-1, keepdim=True)
                 clip_input = emb.cpu().numpy()
                 has_clip   = 1.0
 
