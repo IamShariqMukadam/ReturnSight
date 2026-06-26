@@ -4,11 +4,11 @@ import torch.nn as nn
 from sentence_transformers import SentenceTransformer
 from transformers import CLIPProcessor, CLIPModel
 
-DEVICE    = "cuda" if torch.cuda.is_available() else "cpu"
+DEVICE     = "cuda" if torch.cuda.is_available() else "cpu"
 MODELS_DIR = "models"
-PCA_DIM   = 64
-FUSE_DIM  = 128
-TAB_DIM   = 8   # must match Day 3: 7 features + has_clip
+PCA_DIM    = 64
+FUSE_DIM   = 128
+TAB_DIM    = 8   # must match Day 3: 7 features + has_clip
 
 # ── Attention Fusion — must exactly match Day 3 architecture ──
 class AttentionFusion(nn.Module):
@@ -44,7 +44,7 @@ shap_exp     = None
 st_model     = None
 clip_model   = None
 clip_proc    = None
-price_lookup = None   # {"by_category": {...}, "global": float} — see build_price_lookup.py
+price_lookup = None   # NEW — category-median price lookup for real price_anomaly
 
 def load_all():
     global pca_clip, pca_text, scaler, tab_names
@@ -56,7 +56,7 @@ def load_all():
     scaler    = pickle.load(open(f"{MODELS_DIR}/scaler.pkl",            "rb"))
     tab_names = pickle.load(open(f"{MODELS_DIR}/tab_feature_names.pkl", "rb"))
 
-    print("Loading price lookup...")
+    print("Loading price category lookup...")
     price_lookup = pickle.load(open(f"{MODELS_DIR}/category_price_median.pkl", "rb"))
 
     print("Loading fusion model...")

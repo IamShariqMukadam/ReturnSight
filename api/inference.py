@@ -52,20 +52,27 @@ def predict(req) -> dict:
     desc_text  = f"{title_part} {desc_part}".strip()
 
     review_texts_individual = [t.strip()[:400] for t in texts if t.strip()][:MAX_REVIEWS]
-    if not review_texts_individual:
-        review_texts_individual = [""]   # avoids encode() on an empty list
+    has_review_text = bool(review_texts_individual)
 
     all_embs = ml.st_model.encode(
-        [desc_text] + review_texts_individual,
+        [desc_text] + (review_texts_individual if has_review_text else []),
         normalize_embeddings=True,
         show_progress_bar=False
     )
     desc_emb = all_embs[0]
 
-    review_emb = np.mean(all_embs[1:], axis=0)
-    r_norm = np.linalg.norm(review_emb)
-    if r_norm > 0:
-        review_emb = review_emb / r_norm
+    if has_review_text:
+        review_emb = np.mean(all_embs[1:], axis=0)
+        r_norm = np.linalg.norm(review_emb)
+        if r_norm > 0:
+            review_emb = review_emb / r_norm
+    else:
+        # FIX: was encoding "" as a stand-in, which produces some arbitrary
+        # nonzero embedding the model never saw paired with this case. Day 2
+        # pre-allocates review_embs as np.zeros and never writes to it when a
+        # product has no usable review text -- so "no reviews" at training
+        # time is a TRUE zero vector. Match that exactly here.
+        review_emb = np.zeros(384, dtype=np.float32)
 
     combined_emb = (desc_emb + review_emb) / 2.0
     c_norm = np.linalg.norm(combined_emb)
