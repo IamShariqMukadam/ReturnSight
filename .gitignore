@@ -1,9 +1,24 @@
+# Python
 venv/
-models/
-outputs/
 __pycache__/
 *.pyc
+*.pyo
 .env
+
+# Large ML artifacts — too big for GitHub
+models/
+embeddings/
+data/
+
+# Logs
 *.log
-/tmp/
-scratch/
+outputs/plots/
+outputs/shap/
+
+# Frontend
+returnsight-frontend/node_modules/
+returnsight-frontend/dist/
+returnsight-frontend/.env.local
+
+# OS
+.DS_Store

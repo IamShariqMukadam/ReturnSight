@@ -1,0 +1,165 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --orange: #FF5C1A;
+  --bg: #090A0E;
+  --surface: #0F1017;
+  --card: #13141C;
+  --border: rgba(255,255,255,0.07);
+  --purple: #7C3AED;
+  --pink: #EC4899;
+  --text: #E5E7EB;
+  --muted: #6B7280;
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Inter', sans-serif;
+  margin: 0;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Animated mesh gradient */
+@keyframes mesh-shift {
+  0%   { background-position: 0% 50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+.mesh-bg {
+  background: radial-gradient(ellipse at 20% 50%, rgba(255,92,26,0.15) 0%, transparent 60%),
+              radial-gradient(ellipse at 80% 20%, rgba(124,58,237,0.15) 0%, transparent 60%),
+              radial-gradient(ellipse at 60% 80%, rgba(236,72,153,0.1) 0%, transparent 60%),
+              var(--bg);
+  background-size: 200% 200%;
+  animation: mesh-shift 8s ease infinite;
+}
+
+/* Gradient text */
+.gradient-text {
+  background: linear-gradient(135deg, #FF5C1A, #EC4899, #7C3AED);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  background-size: 200% 200%;
+  animation: mesh-shift 3s ease infinite;
+}
+
+/* Glass card */
+.glass {
+  backdrop-filter: blur(20px);
+  background: rgba(19,20,28,0.8);
+  border: 1px solid rgba(255,255,255,0.08);
+  transition: box-shadow 0.2s;
+}
+.glass:hover {
+  box-shadow: 0 0 0 1px rgba(255,92,26,0.35);
+}
+
+/* Ripple */
+.ripple-btn {
+  position: relative;
+  overflow: hidden;
+}
+.ripple-btn .ripple {
+  position: absolute;
+  border-radius: 50%;
+  background: rgba(255,92,26,0.4);
+  transform: scale(0);
+  animation: ripple-anim 0.6s linear;
+  pointer-events: none;
+}
+@keyframes ripple-anim {
+  to { transform: scale(4); opacity: 0; }
+}
+
+/* Animated gradient border (loading state) */
+@keyframes border-spin {
+  to { --angle: 360deg; }
+}
+@property --angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+.gradient-border-loading {
+  border: 2px solid transparent;
+  background: linear-gradient(var(--bg), var(--bg)) padding-box,
+              conic-gradient(from var(--angle), #FF5C1A, #7C3AED, #EC4899, #FF5C1A) border-box;
+  animation: border-spin 2s linear infinite;
+}
+
+/* Shimmer on signal bars */
+@keyframes shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+.shimmer {
+  background: linear-gradient(90deg, rgba(255,255,255,0.05) 25%, rgba(255,255,255,0.15) 50%, rgba(255,255,255,0.05) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+}
+
+/* Scroll progress bar */
+#scroll-progress {
+  position: fixed;
+  top: 0; left: 0;
+  height: 2px;
+  background: var(--orange);
+  z-index: 9999;
+  transition: width 0.1s;
+}
+
+/* Bottom sheet mobile */
+.bottom-sheet {
+  position: fixed;
+  bottom: 0; left: 0; right: 0;
+  border-radius: 16px 16px 0 0;
+  background: var(--card);
+  border-top: 1px solid var(--border);
+  z-index: 100;
+  touch-action: none;
+}
+
+/* Bento grid */
+.bento-grid {
+  display: grid;
+  grid-template-areas:
+    "score thermo"
+    "signals signals"
+    "meta meta";
+  grid-template-columns: 1fr 280px;
+  gap: 16px;
+}
+@media (max-width: 768px) {
+  .bento-grid {
+    grid-template-areas:
+      "score"
+      "thermo"
+      "signals"
+      "meta";
+    grid-template-columns: 1fr;
+  }
+}
+.bento-score    { grid-area: score; }
+.bento-thermo   { grid-area: thermo; }
+.bento-signals  { grid-area: signals; }
+.bento-meta     { grid-area: meta; }
+
+/* Custom scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 3px; }
+
+/* Focus ring */
+*:focus-visible { outline: 2px solid var(--orange); outline-offset: 2px; }
+
+/* Mobile inputs */
+@media (max-width: 768px) {
+  input, textarea, select { font-size: 16px !important; min-height: 48px; }
+}
