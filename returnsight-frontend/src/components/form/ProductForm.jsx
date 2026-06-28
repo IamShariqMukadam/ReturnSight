@@ -118,17 +118,17 @@ export default function ProductForm({ onSubmit, stage, retryCountdown = 0, onLoa
         </div>
         <div className="flex gap-2">
           <motion.button type="button" onClick={loadExample}
-            whileHover={{ scale: 1.05, borderColor: 'rgba(255,92,26,0.45)', color: '#FF5C1A', backgroundColor: 'rgba(255,92,26,0.08)' }}
+            whileHover={{ scale: 1.05, boxShadow: '0 0 14px rgba(255,92,26,0.3)' }}
             whileTap={{ scale: 0.95 }}
-            className="px-3 py-1 rounded-md text-xs font-medium"
-            style={{ color: 'var(--muted)', border: '1px solid var(--border)', background: 'transparent', transition: 'color 0.15s' }}>
+            className="px-4 py-1.5 rounded-lg text-xs font-semibold"
+            style={{ color: '#fff', border: '1px solid #FF5C1A', background: '#FF5C1A', transition: 'box-shadow 0.2s' }}>
             Example
           </motion.button>
           <motion.button type="button" onClick={reset}
-            whileHover={{ scale: 1.05, borderColor: 'rgba(239,68,68,0.45)', color: '#EF4444', backgroundColor: 'rgba(239,68,68,0.06)' }}
+            whileHover={{ scale: 1.05, boxShadow: '0 0 14px rgba(255,92,26,0.2)' }}
             whileTap={{ scale: 0.95 }}
-            className="px-3 py-1 rounded-md text-xs font-medium"
-            style={{ color: 'var(--muted)', border: '1px solid var(--border)', background: 'transparent', transition: 'color 0.15s' }}>
+            className="px-4 py-1.5 rounded-lg text-xs font-semibold"
+            style={{ color: '#fff', border: '1px solid #FF5C1A', background: '#FF5C1A', transition: 'box-shadow 0.2s' }}>
             Reset
           </motion.button>
         </div>
@@ -159,7 +159,7 @@ export default function ProductForm({ onSubmit, stage, retryCountdown = 0, onLoa
       </div>
 
       {/* Price + Category */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div className="grid grid-cols-2 gap-4">
         <div>
           <label className="block mb-1.5" style={labelStyle}>Price (USD) <span style={{ color: '#EF4444' }}>*</span></label>
           <input type="number" step="0.01" min="0" value={form.price}

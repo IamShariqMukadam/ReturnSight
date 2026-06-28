@@ -15,9 +15,8 @@
 }
 
 * { box-sizing: border-box; }
-html { scroll-behavior: smooth; overflow-x: hidden; }
+html { scroll-behavior: smooth; }
 body {
-  overflow-x: hidden;
   background: var(--bg);
   color: var(--text);
   font-family: 'Inter', sans-serif;
