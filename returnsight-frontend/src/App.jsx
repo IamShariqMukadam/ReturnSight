@@ -117,7 +117,7 @@ function Workbench() {
           `,
         }} />
 
-        <div className="relative w-full px-8 lg:px-16">
+        <div className="relative w-full px-4 sm:px-8 lg:px-16">
 
           {/* Header */}
           <div className="mb-10 text-center">

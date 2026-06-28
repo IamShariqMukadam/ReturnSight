@@ -80,7 +80,7 @@ export function StatsStrip() {
   ]
   return (
     <section className="py-8 border-y" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
-      <div className="w-full max-w-7xl mx-auto px-2 grid grid-cols-5 gap-0">
+      <div className="w-full max-w-7xl mx-auto px-2 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-0">
         {stats.map((s, i) => (
           <div key={s.label} className="flex flex-col items-center justify-center py-6 px-4 relative">
             {i < 4 && <div className="absolute right-0 top-1/4 bottom-1/4 w-px" style={{ background: 'var(--border)' }} />}
@@ -104,7 +104,7 @@ export function HowItWorks() {
     { Icon: Icons.Target, num: '04', title: 'Get actionable verdict', desc: 'Return probability 0–100% with SHAP-level signal explainability. Know exactly what to fix before scaling ad spend.', color: '#22C55E' },
   ]
   return (
-    <section className="py-24 px-8" style={{ background: 'var(--bg)' }}>
+    <section className="py-12 md:py-24 px-4 sm:px-8" style={{ background: 'var(--bg)' }}>
       <div className="w-full max-w-7xl mx-auto">
         <div className="mb-16 text-center">
           <p className="text-xs font-semibold uppercase tracking-widest mb-3" style={{ color: 'var(--orange)' }}>How it works</p>
@@ -114,7 +114,7 @@ export function HowItWorks() {
           </p>
         </div>
 
-        <div className="grid grid-cols-4 gap-5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
           {steps.map((s, i) => (
             <motion.div key={s.title}
               initial={{ opacity: 0, y: 24 }} whileInView={{ opacity: 1, y: 0 }}
@@ -190,7 +190,7 @@ export function SignalsSection() {
   ]
 
   return (
-    <section className="py-24 px-8" style={{ background: 'var(--surface)' }}>
+    <section className="py-12 md:py-24 px-4 sm:px-8" style={{ background: 'var(--surface)' }}>
       <div className="w-full max-w-7xl mx-auto">
         <div className="text-center mb-16">
           <p className="text-xs font-semibold uppercase tracking-widest mb-3" style={{ color: 'var(--orange)' }}>5 AI signals</p>
@@ -200,7 +200,7 @@ export function SignalsSection() {
           </p>
         </div>
 
-        <div className="grid grid-cols-5 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
           {signals.map((s, i) => (
             <motion.div key={s.key}
               initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }}
