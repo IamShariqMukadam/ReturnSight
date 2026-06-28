@@ -104,7 +104,7 @@ export default function ProductForm({ onSubmit, stage, retryCountdown = 0, onLoa
   const inputClass = "w-full rounded-xl px-4 py-3 text-sm"
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-5" noValidate>
+    <div className="space-y-5">
       {/* Form header */}
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-2.5">
@@ -219,7 +219,7 @@ export default function ProductForm({ onSubmit, stage, retryCountdown = 0, onLoa
             @property --angle { syntax: '<angle>'; initial-value: 0deg; inherits: false; }
             @keyframes spin-border { to { --angle: 360deg; } }
           `}</style>
-          <motion.button type="submit" disabled={isLoading}
+          <motion.button type="button" onClick={handleSubmit} disabled={isLoading}
             whileHover={!isLoading ? { scale: 1.01, boxShadow: '0 0 30px rgba(255,92,26,0.4)' } : {}}
             whileTap={!isLoading ? { scale: 0.98 } : {}}
             className="w-full py-3.5 rounded-[10px] font-semibold text-sm text-white relative overflow-hidden"
@@ -268,7 +268,16 @@ export default function ProductForm({ onSubmit, stage, retryCountdown = 0, onLoa
         {retryCountdown > 0 && (
           <p className="text-xs text-center mt-2" style={{ color: 'var(--muted)' }}>Retry available in {retryCountdown}s...</p>
         )}
+        {retryCountdown === 0 && stage === 'error' && (
+          <motion.button onClick={handleSubmit}
+            whileHover={{ scale: 1.02, borderColor: 'rgba(255,92,26,0.4)' }}
+            whileTap={{ scale: 0.98 }}
+            className="w-full mt-2 py-2 rounded-lg text-sm border transition-colors"
+            style={{ borderColor: 'var(--border)', color: 'var(--text)', background: 'transparent' }}>
+            Retry Analysis
+          </motion.button>
+        )}
       </div>
-    </form>
+    </div>
   )
 }

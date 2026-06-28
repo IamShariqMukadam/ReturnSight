@@ -163,12 +163,12 @@ function Workbench() {
             {mode === 'single' && (
               <motion.div key="single"
                 initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -16 }}
-                className="grid lg:grid-cols-2 gap-6 items-stretch">
+                className={`grid lg:grid-cols-2 gap-6 ${result ? 'items-start' : 'items-stretch'}`}>
 
                 {/* Form card — gradient border top */}
-                <div className="relative rounded-2xl p-[1px] h-full"
+                <div className={`relative rounded-2xl p-[1px] ${!result ? 'h-full' : ''}`}
                   style={{ background: 'linear-gradient(180deg,rgba(255,92,26,0.35) 0%,rgba(255,255,255,0.07) 35%,rgba(255,255,255,0.04) 100%)' }}>
-                  <div className="rounded-2xl p-8 h-full" style={{ background: 'var(--card)' }}>
+                  <div className={`rounded-2xl p-8 ${!result ? 'h-full' : ''}`} style={{ background: 'var(--card)' }}>
                     <ProductForm
                       onSubmit={handleSubmit}
                       stage={stage}
@@ -185,7 +185,7 @@ function Workbench() {
                 </div>
 
                 {/* Results — sticky, gradient border */}
-                <div className="h-full">
+                <div className="lg:sticky lg:top-20">
                   {sharedData && !result && (
                     <div className="mb-4 px-4 py-2 rounded-lg text-sm"
                       style={{ background: 'rgba(245,158,11,0.1)', color: '#F59E0B', border: '1px solid rgba(245,158,11,0.2)' }}>
@@ -193,9 +193,9 @@ function Workbench() {
                       <button onClick={() => setSharedData(null)} className="ml-2 underline">Run fresh</button>
                     </div>
                   )}
-                  <div className="relative rounded-2xl p-[1px] h-full"
+                  <div className={`relative rounded-2xl p-[1px] ${!result ? 'h-full' : ''}`}
                     style={{ background: 'linear-gradient(180deg,rgba(255,92,26,0.2) 0%,rgba(255,255,255,0.06) 40%,rgba(255,255,255,0.03) 100%)' }}>
-                    <div className="rounded-2xl h-full" style={{ background: 'var(--card)' }}>
+                    <div className={`rounded-2xl ${!result ? 'h-full' : ''}`} style={{ background: 'var(--card)' }}>
                       <ResultPanel result={result} request={currentRequest} isShared={!!sharedData} isMobile={isMobile} />
                     </div>
                   </div>
