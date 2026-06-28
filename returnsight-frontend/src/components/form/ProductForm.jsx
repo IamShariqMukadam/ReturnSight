@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import ReviewSection from './ReviewSection'
 import Button from '../ui/Button'
@@ -66,6 +66,7 @@ function SectionDivider({ label }) {
 export default function ProductForm({ onSubmit, stage, retryCountdown = 0, onLoadExample }) {
   const toast = useToast()
   const { inputProps, style } = useInputFocus()
+  const submitIntentRef = useRef(false)
 
   const loadSession = () => { try { return JSON.parse(sessionStorage.getItem(SESSION_KEY) || 'null') } catch { return null } }
   const defaults = loadSession() || { title: '', description: '', price: '', image_url: '', category: 'Clothing_Shoes_and_Jewelry', reviews: [{ text: '', rating: 3 }] }
@@ -76,6 +77,8 @@ export default function ProductForm({ onSubmit, stage, retryCountdown = 0, onLoa
 
   const handleSubmit = (e) => {
     e?.preventDefault?.()
+    if (!submitIntentRef.current) return
+    submitIntentRef.current = false
     if (!form.title.trim())       { toast.error('Product title is required'); return }
     if (!form.description.trim()) { toast.error('Product description is required'); return }
     if (!form.price || isNaN(form.price)) { toast.error('Valid price is required'); return }
@@ -92,7 +95,8 @@ export default function ProductForm({ onSubmit, stage, retryCountdown = 0, onLoa
   const reset = () => { setForm({ title:'',description:'',price:'',image_url:'',category:'Clothing_Shoes_and_Jewelry',reviews:[{text:'',rating:3}] }); sessionStorage.removeItem(SESSION_KEY) }
 
   useEffect(() => {
-    window.__rs_submit = handleSubmit; window.__rs_reset = reset; window.__rs_example = loadExample
+    const trigger = () => { submitIntentRef.current = true; handleSubmit() }
+    window.__rs_submit = trigger; window.__rs_reset = reset; window.__rs_example = loadExample
     return () => { delete window.__rs_submit; delete window.__rs_reset; delete window.__rs_example }
   })
 
@@ -219,7 +223,7 @@ export default function ProductForm({ onSubmit, stage, retryCountdown = 0, onLoa
             @property --angle { syntax: '<angle>'; initial-value: 0deg; inherits: false; }
             @keyframes spin-border { to { --angle: 360deg; } }
           `}</style>
-          <motion.button type="button" onClick={handleSubmit} disabled={isLoading}
+          <motion.button type="button" onClick={() => { submitIntentRef.current = true; handleSubmit() }} disabled={isLoading}
             whileHover={!isLoading ? { scale: 1.01, boxShadow: '0 0 30px rgba(255,92,26,0.4)' } : {}}
             whileTap={!isLoading ? { scale: 0.98 } : {}}
             className="w-full py-3.5 rounded-[10px] font-semibold text-sm text-white relative overflow-hidden"
@@ -269,7 +273,7 @@ export default function ProductForm({ onSubmit, stage, retryCountdown = 0, onLoa
           <p className="text-xs text-center mt-2" style={{ color: 'var(--muted)' }}>Retry available in {retryCountdown}s...</p>
         )}
         {retryCountdown === 0 && stage === 'error' && (
-          <motion.button onClick={handleSubmit}
+          <motion.button onClick={() => { submitIntentRef.current = true; handleSubmit() }}
             whileHover={{ scale: 1.02, borderColor: 'rgba(255,92,26,0.4)' }}
             whileTap={{ scale: 0.98 }}
             className="w-full mt-2 py-2 rounded-lg text-sm border transition-colors"

@@ -161,48 +161,47 @@ function Workbench() {
           <AnimatePresence mode="wait">
             {/* ── SINGLE MODE ── */}
             {mode === 'single' && (
-              <motion.div key="single"
-                initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -16 }}
-                className={`grid lg:grid-cols-2 gap-6 ${result ? 'items-start' : 'items-stretch'}`}>
+                <motion.div key="single"
+                  initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -16 }}
+                  className={result ? 'grid lg:grid-cols-2 gap-6 items-start' : 'max-w-2xl mx-auto'}>
 
-                {/* Form card — gradient border top */}
-                <div className={`relative rounded-2xl p-[1px] ${!result ? 'h-full' : ''}`}
-                  style={{ background: 'linear-gradient(180deg,rgba(255,92,26,0.35) 0%,rgba(255,255,255,0.07) 35%,rgba(255,255,255,0.04) 100%)' }}>
-                  <div className={`rounded-2xl p-8 ${!result ? 'h-full' : ''}`} style={{ background: 'var(--card)' }}>
-                    <ProductForm
-                      onSubmit={handleSubmit}
-                      stage={stage}
-                      retryCountdown={retryCountdown}
-                      onLoadExample={() => window.__rs_example?.()}
-                    />
-                    {error && (
-                      <p className="mt-4 text-sm p-3 rounded-lg"
-                        style={{ background: 'rgba(239,68,68,0.08)', color: '#EF4444', border: '1px solid rgba(239,68,68,0.2)' }}>
-                        {error}
-                      </p>
-                    )}
+                  <div className="relative rounded-2xl p-[1px]"
+                    style={{ background: 'linear-gradient(180deg,rgba(255,92,26,0.35) 0%,rgba(255,255,255,0.07) 35%,rgba(255,255,255,0.04) 100%)' }}>
+                    <div className="rounded-2xl p-8" style={{ background: 'var(--card)' }}>
+                      <ProductForm
+                        onSubmit={handleSubmit}
+                        stage={stage}
+                        retryCountdown={retryCountdown}
+                        onLoadExample={() => window.__rs_example?.()}
+                      />
+                      {error && (
+                        <p className="mt-4 text-sm p-3 rounded-lg"
+                          style={{ background: 'rgba(239,68,68,0.08)', color: '#EF4444', border: '1px solid rgba(239,68,68,0.2)' }}>
+                          {error}
+                        </p>
+                      )}
+                    </div>
                   </div>
-                </div>
 
-                {/* Results — sticky, gradient border */}
-                <div className="lg:sticky lg:top-20">
-                  {sharedData && !result && (
-                    <div className="mb-4 px-4 py-2 rounded-lg text-sm"
-                      style={{ background: 'rgba(245,158,11,0.1)', color: '#F59E0B', border: '1px solid rgba(245,158,11,0.2)' }}>
-                      Viewing shared result from {new Date(sharedData.ts).toLocaleDateString()}
-                      <button onClick={() => setSharedData(null)} className="ml-2 underline">Run fresh</button>
+                  {result && (
+                    <div className="lg:sticky lg:top-20">
+                      {sharedData && (
+                        <div className="mb-4 px-4 py-2 rounded-lg text-sm"
+                          style={{ background: 'rgba(245,158,11,0.1)', color: '#F59E0B', border: '1px solid rgba(245,158,11,0.2)' }}>
+                          Viewing shared result from {new Date(sharedData.ts).toLocaleDateString()}
+                          <button onClick={() => setSharedData(null)} className="ml-2 underline">Run fresh</button>
+                        </div>
+                      )}
+                      <div className="relative rounded-2xl p-[1px]"
+                        style={{ background: 'linear-gradient(180deg,rgba(255,92,26,0.2) 0%,rgba(255,255,255,0.06) 40%,rgba(255,255,255,0.03) 100%)' }}>
+                        <div className="rounded-2xl" style={{ background: 'var(--card)' }}>
+                          <ResultPanel result={result} request={currentRequest} isShared={!!sharedData} isMobile={isMobile} />
+                        </div>
+                      </div>
                     </div>
                   )}
-                  <div className={`relative rounded-2xl p-[1px] ${!result ? 'h-full' : ''}`}
-                    style={{ background: 'linear-gradient(180deg,rgba(255,92,26,0.2) 0%,rgba(255,255,255,0.06) 40%,rgba(255,255,255,0.03) 100%)' }}>
-                    <div className={`rounded-2xl ${!result ? 'h-full' : ''}`} style={{ background: 'var(--card)' }}>
-                      <ResultPanel result={result} request={currentRequest} isShared={!!sharedData} isMobile={isMobile} />
-                    </div>
-                  </div>
-                </div>
-              </motion.div>
-            )}
-
+                </motion.div>
+              )}
             {/* ── BATCH MODE ── */}
             {mode === 'batch' && (
               <motion.div key="batch"
