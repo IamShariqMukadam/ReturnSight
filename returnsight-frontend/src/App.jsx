@@ -100,24 +100,18 @@ function Workbench() {
       <SignalsSection />
 
       {/* ── WORKBENCH — full width ── */}
-      <section ref={workbenchRef} className="py-20 w-full relative" style={{ background: 'var(--bg)' }}>
+      <section ref={workbenchRef} className="py-14 md:py-20 w-full relative" style={{ background: 'var(--bg)' }}>
 
         {/* Grid texture + orange radial glow */}
         <div className="absolute inset-0 pointer-events-none" style={{
-          backgroundImage: 'linear-gradient(rgba(255,92,26,0.07) 1px,transparent 1px),linear-gradient(90deg,rgba(255,92,26,0.07) 1px,transparent 1px)',
+          backgroundImage: 'linear-gradient(rgba(255,92,26,0.04) 1px,transparent 1px),linear-gradient(90deg,rgba(255,92,26,0.04) 1px,transparent 1px)',
           backgroundSize: '48px 48px',
         }} />
         <div className="absolute inset-0 pointer-events-none" style={{
-          background: `
-            radial-gradient(ellipse 100% 50% at 50% 0%, rgba(255,92,26,0.35) 0%, transparent 50%),
-            radial-gradient(ellipse 70% 60% at 0% 35%, rgba(124,58,237,0.30) 0%, transparent 50%),
-            radial-gradient(ellipse 70% 60% at 100% 35%, rgba(255,92,26,0.28) 0%, transparent 50%),
-            radial-gradient(ellipse 80% 50% at 50% 100%, rgba(124,58,237,0.30) 0%, transparent 50%),
-            radial-gradient(ellipse 60% 40% at 50% 50%, rgba(236,72,153,0.12) 0%, transparent 55%)
-          `,
+          background: 'radial-gradient(ellipse 60% 40% at 50% 0%,rgba(255,92,26,0.08) 0%,transparent 70%)',
         }} />
 
-        <div className="relative w-full px-8 lg:px-16">
+        <div className="relative w-full px-4 sm:px-8 lg:px-16">
 
           {/* Header */}
           <div className="mb-10 text-center">
