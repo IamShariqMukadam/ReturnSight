@@ -35,12 +35,14 @@ def predict(req) -> dict:
     rating_std    = float(np.std(ratings))          if len(ratings) > 1 else 0.0
     log_review_count = float(np.log1p(len(ratings)))
 
-    # price_anomaly — real category-median lookup (built by build_price_lookup.py
-    # from Day 1/3's training data), not a hardcoded stub. Falls back to the
-    # global median for any category not seen during training.
-    cat_median = ml.price_lookup["by_category"].get(
-        req.category, ml.price_lookup["global"]
-    )
+    # price_anomaly — real category-median lookup with defensive fallback
+    # Falls back to global median if by_category key missing or price_lookup not loaded
+    by_cat = {}
+    global_med = 50.0
+    if ml.price_lookup:
+        by_cat = ml.price_lookup.get("by_category", {})
+        global_med = ml.price_lookup.get("global", 50.0)
+    cat_median = by_cat.get(req.category, global_med) or global_med
     price_anomaly = float(req.price / (cat_median + 1e-6))
 
     # ── 2. TEXT EMBEDDINGS + MISMATCH SCORE ─────────────────

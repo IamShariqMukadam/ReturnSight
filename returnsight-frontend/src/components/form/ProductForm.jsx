@@ -159,7 +159,7 @@ export default function ProductForm({ onSubmit, stage, retryCountdown = 0, onLoa
       </div>
 
       {/* Price + Category */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div className="grid grid-cols-2 gap-4">
         <div>
           <label className="block mb-1.5" style={labelStyle}>Price (USD) <span style={{ color: '#EF4444' }}>*</span></label>
           <input type="number" step="0.01" min="0" value={form.price}
@@ -267,15 +267,6 @@ export default function ProductForm({ onSubmit, stage, retryCountdown = 0, onLoa
 
         {retryCountdown > 0 && (
           <p className="text-xs text-center mt-2" style={{ color: 'var(--muted)' }}>Retry available in {retryCountdown}s...</p>
-        )}
-        {retryCountdown === 0 && stage === 'error' && (
-          <motion.button onClick={handleSubmit}
-            whileHover={{ scale: 1.02, borderColor: 'rgba(255,92,26,0.4)' }}
-            whileTap={{ scale: 0.98 }}
-            className="w-full mt-2 py-2 rounded-lg text-sm border transition-colors"
-            style={{ borderColor: 'var(--border)', color: 'var(--text)', background: 'transparent' }}>
-            Retry Analysis
-          </motion.button>
         )}
       </div>
     </form>
