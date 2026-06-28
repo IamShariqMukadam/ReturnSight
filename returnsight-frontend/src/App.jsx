@@ -59,7 +59,7 @@ function Workbench() {
   const handleSubmit = async (payload) => {
     setCurrentRequest(payload)
     const res = await analyze(payload)
-    if (res) saveAnalysis(payload, res)
+    if (res) { setResult(res); saveAnalysis(payload, res) }
   }
 
   useKeyboard({
@@ -161,47 +161,63 @@ function Workbench() {
           <AnimatePresence mode="wait">
             {/* ── SINGLE MODE ── */}
             {mode === 'single' && (
-                <motion.div key="single"
-                  initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -16 }}
-                  className={result ? 'grid lg:grid-cols-2 gap-6 items-start' : 'max-w-2xl mx-auto'}>
+              <motion.div key="single"
+                initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -16 }}
+                className="grid lg:grid-cols-2 gap-6 items-start">
 
+                {/* Form */}
+                <div className="relative rounded-2xl p-[1px]"
+                  style={{ background: 'linear-gradient(180deg,rgba(255,92,26,0.35) 0%,rgba(255,255,255,0.07) 35%,rgba(255,255,255,0.04) 100%)' }}>
+                  <div className="rounded-2xl p-8" style={{ background: 'var(--card)' }}>
+                    <ProductForm
+                      onSubmit={handleSubmit}
+                      stage={stage}
+                      retryCountdown={retryCountdown}
+                      onLoadExample={() => window.__rs_example?.()}
+                    />
+                    {error && (
+                      <p className="mt-4 text-sm p-3 rounded-lg"
+                        style={{ background: 'rgba(239,68,68,0.08)', color: '#EF4444', border: '1px solid rgba(239,68,68,0.2)' }}>
+                        {error}
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Results — always mounted, placeholder until result exists */}
+                <div className="lg:sticky lg:top-20">
+                  {sharedData && result && (
+                    <div className="mb-4 px-4 py-2 rounded-lg text-sm"
+                      style={{ background: 'rgba(245,158,11,0.1)', color: '#F59E0B', border: '1px solid rgba(245,158,11,0.2)' }}>
+                      Viewing shared result from {new Date(sharedData.ts).toLocaleDateString()}
+                      <button onClick={() => setSharedData(null)} className="ml-2 underline">Run fresh</button>
+                    </div>
+                  )}
                   <div className="relative rounded-2xl p-[1px]"
-                    style={{ background: 'linear-gradient(180deg,rgba(255,92,26,0.35) 0%,rgba(255,255,255,0.07) 35%,rgba(255,255,255,0.04) 100%)' }}>
-                    <div className="rounded-2xl p-8" style={{ background: 'var(--card)' }}>
-                      <ProductForm
-                        onSubmit={handleSubmit}
-                        stage={stage}
-                        retryCountdown={retryCountdown}
-                        onLoadExample={() => window.__rs_example?.()}
-                      />
-                      {error && (
-                        <p className="mt-4 text-sm p-3 rounded-lg"
-                          style={{ background: 'rgba(239,68,68,0.08)', color: '#EF4444', border: '1px solid rgba(239,68,68,0.2)' }}>
-                          {error}
-                        </p>
+                    style={{ background: 'linear-gradient(180deg,rgba(255,92,26,0.2) 0%,rgba(255,255,255,0.06) 40%,rgba(255,255,255,0.03) 100%)' }}>
+                    <div className="rounded-2xl" style={{ background: 'var(--card)' }}>
+                      {result ? (
+                        <ResultPanel result={result} request={currentRequest} isShared={!!sharedData} isMobile={isMobile} />
+                      ) : (
+                        <div className="flex flex-col items-center justify-center p-12 text-center" style={{ minHeight: 280 }}>
+                          <div className="w-14 h-14 rounded-2xl flex items-center justify-center mb-4"
+                            style={{ background: 'rgba(255,92,26,0.08)', border: '1px solid rgba(255,92,26,0.15)' }}>
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="rgba(255,92,26,0.45)" strokeWidth="1.5" strokeLinecap="round">
+                              <path d="M3 3v18h18"/><path d="M7 16l4-4 4 4 4-4"/>
+                            </svg>
+                          </div>
+                          <p className="text-sm font-medium mb-1.5" style={{ color: 'rgba(255,255,255,0.35)' }}>Awaiting Analysis</p>
+                          <p className="text-xs leading-relaxed" style={{ color: 'rgba(255,255,255,0.18)' }}>
+                            Fill in the form and click<br />Analyze Return Risk →
+                          </p>
+                        </div>
                       )}
                     </div>
                   </div>
+                </div>
+              </motion.div>
+            )}
 
-                  {result && (
-                    <div className="lg:sticky lg:top-20">
-                      {sharedData && (
-                        <div className="mb-4 px-4 py-2 rounded-lg text-sm"
-                          style={{ background: 'rgba(245,158,11,0.1)', color: '#F59E0B', border: '1px solid rgba(245,158,11,0.2)' }}>
-                          Viewing shared result from {new Date(sharedData.ts).toLocaleDateString()}
-                          <button onClick={() => setSharedData(null)} className="ml-2 underline">Run fresh</button>
-                        </div>
-                      )}
-                      <div className="relative rounded-2xl p-[1px]"
-                        style={{ background: 'linear-gradient(180deg,rgba(255,92,26,0.2) 0%,rgba(255,255,255,0.06) 40%,rgba(255,255,255,0.03) 100%)' }}>
-                        <div className="rounded-2xl" style={{ background: 'var(--card)' }}>
-                          <ResultPanel result={result} request={currentRequest} isShared={!!sharedData} isMobile={isMobile} />
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </motion.div>
-              )}
             {/* ── BATCH MODE ── */}
             {mode === 'batch' && (
               <motion.div key="batch"
@@ -240,7 +256,6 @@ function Workbench() {
       </AnimatePresence>
 
       <ShortcutPalette onAction={handlePaletteAction} />
-      {/* NOTE: removed fixed bottom shortcut pill — ⌘K button is now in the Navbar */}
     </div>
   )
 }

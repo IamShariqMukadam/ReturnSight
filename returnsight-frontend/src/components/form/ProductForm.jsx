@@ -34,7 +34,6 @@ const STAGE_LABELS = {
   error:      { text: 'Retry Analysis' },
 }
 
-// Fix 5: Premium input focus state hook
 function useInputFocus() {
   const [focused, setFocused] = useState(null)
   const inputProps = (name) => ({
@@ -52,7 +51,6 @@ function useInputFocus() {
   return { inputProps, style, focused }
 }
 
-// Section divider component
 function SectionDivider({ label }) {
   return (
     <div className="flex items-center gap-3 my-1">
@@ -211,7 +209,6 @@ export default function ProductForm({ onSubmit, stage, retryCountdown = 0, onLoa
 
       {/* Submit */}
       <div className="pt-2">
-        {/* Animated gradient border wrapper — visible only when loading */}
         <div className="relative rounded-xl p-[2px]"
           style={{
             background: isLoading
@@ -223,7 +220,9 @@ export default function ProductForm({ onSubmit, stage, retryCountdown = 0, onLoa
             @property --angle { syntax: '<angle>'; initial-value: 0deg; inherits: false; }
             @keyframes spin-border { to { --angle: 360deg; } }
           `}</style>
-          <motion.button type="button" onClick={() => { submitIntentRef.current = true; handleSubmit() }} disabled={isLoading}
+          <motion.button type="button"
+            onClick={() => { submitIntentRef.current = true; handleSubmit() }}
+            disabled={isLoading}
             whileHover={!isLoading ? { scale: 1.01, boxShadow: '0 0 30px rgba(255,92,26,0.4)' } : {}}
             whileTap={!isLoading ? { scale: 0.98 } : {}}
             className="w-full py-3.5 rounded-[10px] font-semibold text-sm text-white relative overflow-hidden"
@@ -233,7 +232,6 @@ export default function ProductForm({ onSubmit, stage, retryCountdown = 0, onLoa
                 : 'linear-gradient(135deg, #FF5C1A 0%, #e0450f 100%)',
               cursor: isLoading ? 'not-allowed' : 'pointer',
             }}>
-            {/* Shimmer on idle — fixed unicode minus bug */}
             {!isLoading && (
               <motion.div className="absolute inset-0 pointer-events-none"
                 style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.12) 50%, transparent 100%)' }}
@@ -252,7 +250,6 @@ export default function ProductForm({ onSubmit, stage, retryCountdown = 0, onLoa
                 <span style={{ color: isLoading ? '#FF5C1A' : '#fff' }}>
                   {stageInfo.text}
                 </span>
-                {/* Animated pulsing dots for predicting state */}
                 {stage === 'predicting' && (
                   <span className="flex gap-0.5">
                     {[0, 1, 2].map(i => (
@@ -273,7 +270,8 @@ export default function ProductForm({ onSubmit, stage, retryCountdown = 0, onLoa
           <p className="text-xs text-center mt-2" style={{ color: 'var(--muted)' }}>Retry available in {retryCountdown}s...</p>
         )}
         {retryCountdown === 0 && stage === 'error' && (
-          <motion.button onClick={() => { submitIntentRef.current = true; handleSubmit() }}
+          <motion.button
+            onClick={() => { submitIntentRef.current = true; handleSubmit() }}
             whileHover={{ scale: 1.02, borderColor: 'rgba(255,92,26,0.4)' }}
             whileTap={{ scale: 0.98 }}
             className="w-full mt-2 py-2 rounded-lg text-sm border transition-colors"
