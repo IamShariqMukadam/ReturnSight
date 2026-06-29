@@ -190,7 +190,7 @@ function EmptyState() {
 // ── MAIN PANEL ───────────────────────────────────────────────
 export default function ResultPanel({ result, request, isShared, isMobile }) {
   const toast = useToast()
-  const [recsOpen, setRecsOpen] = useState(false)
+
 
   if (!result) return <EmptyState />
 
@@ -210,7 +210,7 @@ export default function ResultPanel({ result, request, isShared, isMobile }) {
 
   const PanelContent = () => (
     <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}
-      aria-live="polite" className="mt-4">
+      aria-live="polite">
       {isShared && (
         <div className="mb-4 px-4 py-2 rounded-lg text-sm"
           style={{ background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.2)', color: '#F59E0B' }}>
@@ -236,21 +236,14 @@ export default function ResultPanel({ result, request, isShared, isMobile }) {
         <div className="bento-thermo"><RiskThermometer probability={result.return_probability} /></div>
         <div className="bento-signals"><SignalBreakdown signals={result.signal_breakdown} /></div>
         <div className="bento-meta rounded-xl border" style={{ background: 'var(--card)', borderColor: 'var(--border)' }}>
-          <button onClick={() => setRecsOpen(!recsOpen)} className="w-full flex items-center justify-between p-4 text-left">
+          <div className="p-4 pb-2">
             <span className="text-xs font-medium" style={{ color: 'var(--muted)' }}>SELLER RECOMMENDATIONS</span>
-            <span className="text-xs" style={{ color: 'var(--muted)' }}>{recsOpen ? '▲' : '▼'}</span>
-          </button>
-          <AnimatePresence>
-            {recsOpen && (
-              <motion.div initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }} className="overflow-hidden px-4 pb-4">
-                <div className="space-y-2">
-                  {recs.map((r, i) => (
-                    <p key={i} className="text-sm leading-relaxed" style={{ color: r.startsWith('✓') ? '#22C55E' : '#F59E0B' }}>{r}</p>
-                  ))}
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
+          </div>
+          <div className="px-4 pb-4 space-y-2">
+            {recs.map((r, i) => (
+              <p key={i} className="text-sm leading-relaxed" style={{ color: r.startsWith('✓') ? '#22C55E' : 'rgba(255,255,255,0.72)' }}>{r}</p>
+            ))}
+          </div>
         </div>
       </div>
       <ExportCard result={result} productTitle={request?.title || 'Product'} />
