@@ -1,202 +1,222 @@
-<div align="center">
+# ReturnSight — AI Return Risk Predictor
 
-# 🛍️ ReturnSight
-### Know the return risk *before* the return.
+> **Know the return risk before the return.** A production-grade, multimodal AI pipeline that predicts e-commerce product return probability from listing data and customer reviews — trained on 66M Amazon reviews.
 
-A production-grade multimodal AI pipeline that predicts e-commerce return probability from listing data and customer reviews — trained on 66M Amazon reviews.
-
-[![Live Demo](https://img.shields.io/badge/Live_Demo-returnsight.vercel.app-00C853?style=for-the-badge&logo=vercel&logoColor=white)](https://returnsight.vercel.app)
-[![API Docs](https://img.shields.io/badge/API_Docs-FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white)](https://api.returnsight.me/docs)
-[![Repo](https://img.shields.io/badge/Repo-GitHub-181717?style=for-the-badge&logo=github&logoColor=white)](https://github.com/IamShariqMukadam/ReturnSight)
-[![License](https://img.shields.io/badge/License-MIT-yellow?style=for-the-badge)](#license)
-
-</div>
-
----
-
-## 📸 Preview
-
-<!-- Drop your screenshots into an /assets folder and point these at the real files -->
-<div align="center">
-<img src="./assets/hero.png" width="800" alt="ReturnSight dashboard" />
-</div>
-
-<details>
-<summary><b>More screenshots</b></summary>
-<br>
-<img src="./assets/single-analysis.png" width="400" alt="Single analysis" />
-<img src="./assets/batch-upload.png" width="400" alt="Batch CSV upload" />
-<img src="./assets/compare-mode.png" width="400" alt="Compare mode" />
-<img src="./assets/shap-breakdown.png" width="400" alt="SHAP breakdown" />
-</details>
+🔗 **Live Demo:** [returnsight.vercel.app](https://returnsight.vercel.app)  
+📡 **API:** [api.returnsight.me/docs](https://api.returnsight.me/docs)  
+📂 **Repo:** [github.com/IamShariqMukadam/ReturnSight](https://github.com/IamShariqMukadam/ReturnSight)
 
 ---
 
 ## What it does
 
-Sellers usually find out a listing returns badly *after* scaling ad spend on it. ReturnSight flips that — paste a title, description, price, and reviews, get a 0–100% return-risk score with SHAP-backed signal attribution, in under 500ms.
+E-commerce sellers typically discover return problems *after* scaling ad spend. ReturnSight moves that discovery to *before* publishing — analyzing a product listing and its reviews to output a 0–100% return probability score with signal-level attribution powered by SHAP values.
 
-## 📊 Results
+Paste a product title, description, price, and customer reviews. Get a verdict in under 500ms.
+
+---
+
+## Results
 
 | Metric | Value |
 |---|---|
 | Test AUC-ROC | **0.8302** |
 | Average Precision | **0.7022** |
-| Training data | 66M reviews · ~611K products |
-| Return rate | 27% |
+| Training data | 66M Amazon reviews (Clothing, Shoes & Jewelry) |
+| Unique products | ~611K |
+| Return rate in training | 27% |
 | CLIP image coverage | ~96% |
 | Inference latency | <500ms (CPU) |
 
 ---
 
-## 🧰 Tech Stack
+## How it works — technical pipeline
 
-**ML / Backend**
+### 1. Label Engineering (leakage-free)
 
-| Layer | Technology |
+The original naive approach — labeling returns from `avg_rating` and `one_star_pct` — caused fake AUC of **1.0000** because those features were then used in the model. Fixed by building labels from **explicit return-mention language** in raw review text using a regex pattern covering 14 distinct return/refund expressions (`"returned it"`, `"sending it back"`, `"requested a refund"`, etc.).
+
+Labels use a **rate-based threshold** (≥2% of reviews mention returns) rather than raw count, preventing bias toward high-volume products. This makes `avg_rating`, `one_star_pct`, `five_star_pct`, and `rating_std` leakage-free tabular features.
+
+### 2. Data Processing
+
+- **Source:** McAuley-Lab Amazon Reviews 2023 dataset (Clothing, Shoes & Jewelry), ~66M reviews, ~7.2M products
+- **Processing:** Chunked streaming (500K rows/chunk) on EC2 with incremental merge checkpointing — avoids OOM on large datasets
+- **Feature engineering:** `log_review_count`, `price_anomaly` (price ÷ category median), `rating_std` (computed via sum-of-squared-ratings aggregate across chunks), `review_desc_mismatch`
+
+### 3. Multimodal Embeddings
+
+**CLIP (image signal — 512-dim)**
+- `openai/clip-vit-base-patch32` encodes product images
+- Uses `vision_model` + `visual_projection` directly (not `get_image_features()`) to match the training path exactly and avoid version-specific API inconsistencies
+- L2-normalized for cosine similarity
+- ~96% image coverage; zero-vector fallback for missing images — attention layer learns to downweight
+
+**Sentence-Transformers (text signal — 384-dim)**
+- `all-MiniLM-L6-v2` encodes product descriptions and customer reviews
+- Key fix: reviews encoded **individually then mean-pooled** (not concatenated) — concatenation hit a hard 256-token ceiling that silently truncated most review content
+- `review_desc_mismatch = 1 − cosine_similarity(desc_emb, review_emb)` — measures gap between seller claims and buyer experience — strongest return predictor
+
+### 4. Attention Fusion (PyTorch)
+
+A custom 3-modality attention fusion layer projects CLIP (64-dim via PCA), text (64-dim via PCA), and tabular (8-dim) into a shared 128-dim space and learns per-sample attention weights:
+
+```
+CLIP → Linear(64→128) + LayerNorm + ReLU  ┐
+Text → Linear(64→128) + LayerNorm + ReLU  ├─→ Softmax attention → Weighted sum → 128-dim fused
+Tab  → Linear( 8→128) + LayerNorm + ReLU  ┘
+                                            └→ Linear(128→64) → ReLU → Dropout(0.3) → Linear(64→1)
+```
+
+Trained with BCEWithLogitsLoss + `scale_pos_weight` for class imbalance. Validated AUC: **0.81+**
+
+Average learned attention weights confirm expected signal strength:
+- **Text: 0.397** (dominant)
+- **Tabular: 0.389**
+- **Image: 0.214** (weakest — AI-generated product photos contain little distinguishing information)
+
+### 5. LightGBM Classifier
+
+Final feature matrix: fused representation (128-dim) + raw tabular (8-dim) = **136 features**
+
+- Hyperparameter tuning via **Optuna** (50 trials, TPE sampler) on held-out validation set
+- Test set kept completely clean — never touched during tuning
+- Baseline AUC: 0.8292 → Tuned AUC: **0.8302**
+- `scale_pos_weight` handles 73/27 class imbalance
+
+### 6. SHAP Explainability
+
+`shap.TreeExplainer` on the LightGBM model. The 128 fused dimensions are collapsed to a single `image_text_fusion` SHAP value for human-readable attribution. Per-prediction explanations identify the dominant signal and generate seller-facing recommendations.
+
+### 7. FastAPI Serving
+
+- Lifespan context manager loads all models once at startup (~8s cold start)
+- Inference: encode text → CLIP image fetch → PCA reduce → attention fusion → LightGBM → SHAP → response
+- Latency: **~200–500ms** on CPU (DigitalOcean 4GB Droplet)
+- Full CORS, Pydantic schemas, 503 retry logic
+
+---
+
+## Architecture
+
+```
+Product Listing Input
+│
+├── Title + Description ──► sentence-transformer (all-MiniLM-L6-v2) ──► 384-dim desc_emb
+├── Customer Reviews    ──► sentence-transformer (mean-pool) ──────────► 384-dim review_emb
+│                                                                         │
+│    review_desc_mismatch = 1 - cosine_sim(desc_emb, review_emb) ◄───────┘
+│
+├── Product Image URL   ──► CLIP ViT-B/32 ──► 512-dim image_emb
+│
+└── Tabular Features    ──► [avg_rating, one_star_pct, five_star_pct,
+                             rating_std, log_review_count, price_anomaly,
+                             review_desc_mismatch, has_clip]
+
+         ↓ PCA (→64-dim each)          ↓ StandardScaler
+  [clip_64] [text_64] [tab_8]
+         ↓
+  PyTorch Attention Fusion Layer
+  (learned weights per modality)
+         ↓
+  128-dim fused representation
+         ↓
+  concat with raw tab_8  →  136-dim feature vector
+         ↓
+  LightGBM Classifier (Optuna-tuned)
+         ↓
+  Return Probability (0–100%)
+         ↓
+  SHAP TreeExplainer → signal attribution
+         ↓
+  FastAPI /predict response
+```
+
+---
+
+## Tech Stack
+
+### ML / Backend
+| Component | Technology |
 |---|---|
-| Embeddings | ![CLIP](https://img.shields.io/badge/CLIP_ViT--B/32-FF6F00?logo=openai&logoColor=white) ![MiniLM](https://img.shields.io/badge/all--MiniLM--L6--v2-FFCA28?logo=huggingface&logoColor=black) |
-| Fusion Model | ![PyTorch](https://img.shields.io/badge/PyTorch-EE4C2C?logo=pytorch&logoColor=white) |
-| Classifier | ![LightGBM](https://img.shields.io/badge/LightGBM-02569B?logoColor=white) |
-| Explainability | ![SHAP](https://img.shields.io/badge/SHAP-8E44AD?logoColor=white) |
-| Tuning | ![Optuna](https://img.shields.io/badge/Optuna-0078D4?logoColor=white) |
-| API | ![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white) ![Uvicorn](https://img.shields.io/badge/Uvicorn-2E8B57?logoColor=white) |
-| Data | ![Pandas](https://img.shields.io/badge/Pandas-150458?logo=pandas&logoColor=white) ![HF Datasets](https://img.shields.io/badge/HF_Datasets-FFD21E?logo=huggingface&logoColor=black) |
-| Compute | ![AWS](https://img.shields.io/badge/AWS_EC2-FF9900?logo=amazonaws&logoColor=white) ![Kaggle](https://img.shields.io/badge/Kaggle_T4-20BEFF?logo=kaggle&logoColor=white) |
+| Embeddings | CLIP ViT-B/32, all-MiniLM-L6-v2 |
+| Dimensionality reduction | PCA (scikit-learn) |
+| Fusion model | PyTorch (custom attention layer) |
+| Classifier | LightGBM |
+| Explainability | SHAP TreeExplainer |
+| Hyperparameter tuning | Optuna (TPE, 50 trials) |
+| API | FastAPI + Uvicorn |
+| Data processing | HuggingFace Datasets (pinned v3.x), pandas, pyarrow |
+| Compute | AWS EC2 (m6i.2xlarge + g4dn.xlarge), Kaggle GPU T4 |
 
-**Frontend**
-
-| Layer | Technology |
+### Frontend
+| Component | Technology |
 |---|---|
-| Framework | ![React](https://img.shields.io/badge/React_18-61DAFB?logo=react&logoColor=black) ![Vite](https://img.shields.io/badge/Vite-646CFF?logo=vite&logoColor=white) |
-| Styling | ![Tailwind](https://img.shields.io/badge/TailwindCSS-06B6D4?logo=tailwindcss&logoColor=white) ![Framer](https://img.shields.io/badge/Framer_Motion-EF008F?logo=framer&logoColor=white) |
-| State / Data | ![Zustand](https://img.shields.io/badge/Zustand-433E38?logoColor=white) ![TanStack](https://img.shields.io/badge/TanStack_Query-FF4154?logoColor=white) ![Axios](https://img.shields.io/badge/Axios-5A29E4?logo=axios&logoColor=white) |
-| Charts | ![Recharts](https://img.shields.io/badge/Recharts-22B5BF?logoColor=white) |
-| Utils | ![html2canvas](https://img.shields.io/badge/html2canvas-FF7043?logoColor=white) ![PapaParse](https://img.shields.io/badge/PapaParse-2C3E50?logoColor=white) |
+| Framework | React 18 + Vite |
+| Styling | Tailwind CSS + CSS variables |
+| Animation | Framer Motion |
+| State | Zustand |
+| Data fetching | TanStack Query + axios |
+| Charts | Recharts |
+| Export | html2canvas |
+| CSV | PapaParse |
 
-**Infrastructure**
-
-| Layer | Technology |
+### Infrastructure
+| Component | Technology |
 |---|---|
-| Hosting | ![Vercel](https://img.shields.io/badge/Vercel-000000?logo=vercel&logoColor=white) ![DigitalOcean](https://img.shields.io/badge/DigitalOcean-0080FF?logo=digitalocean&logoColor=white) |
-| Server | ![nginx](https://img.shields.io/badge/nginx-009639?logo=nginx&logoColor=white) ![systemd](https://img.shields.io/badge/systemd-555555?logoColor=white) |
-| SSL / Domain | ![Let's Encrypt](https://img.shields.io/badge/Let's_Encrypt-003A70?logo=letsencrypt&logoColor=white) ![Namecheap](https://img.shields.io/badge/Namecheap-DE3723?logoColor=white) |
+| Frontend hosting | Vercel |
+| Backend hosting | DigitalOcean Droplet (4GB RAM) |
+| Process management | systemd |
+| Reverse proxy | nginx |
+| SSL | Let's Encrypt (certbot) |
+| Domain | Namecheap (.me via GitHub Student Pack) |
 
 ---
 
-## ⚙️ How it works
+## Features
 
-<details>
-<summary><b>1. Label Engineering (leakage-free)</b></summary><br>
-
-Naive labeling from <code>avg_rating</code>/<code>one_star_pct</code> leaked into features → fake AUC of 1.0000. Fixed by regex-matching 14 explicit return-mention phrases (<code>"sending it back"</code>, <code>"requested a refund"</code>, etc.) in raw review text, then thresholding at <b>≥2% mention rate</b> — not raw count — to avoid bias toward high-volume products.
-</details>
-
-<details>
-<summary><b>2. Data Processing</b></summary><br>
-
-McAuley-Lab Amazon Reviews 2023 (Clothing/Shoes/Jewelry) — 66M reviews, 7.2M products. Streamed in 500K-row chunks on EC2 with incremental merge checkpointing to avoid OOM. Engineered <code>log_review_count</code>, <code>price_anomaly</code>, <code>rating_std</code> (sum-of-squares aggregate across chunks), <code>review_desc_mismatch</code>.
-</details>
-
-<details>
-<summary><b>3. Multimodal Embeddings</b></summary><br>
-
-- **CLIP ViT-B/32** → 512-dim image embeddings (~96% coverage, zero-vector fallback for missing images)
-- **all-MiniLM-L6-v2** → 384-dim text embeddings. Reviews are mean-pooled individually, not concatenated — dodges the 256-token truncation ceiling.
-- <code>review_desc_mismatch = 1 − cosine_sim(desc_emb, review_emb)</code> — the single strongest predictor.
-</details>
-
-<details>
-<summary><b>4. Attention Fusion (PyTorch)</b></summary><br>
-
-```
-CLIP(64) → Linear+LN+ReLU ┐
-Text(64) → Linear+LN+ReLU ├→ Softmax attention → 128-dim fused → MLP → logit
-Tab(8)   → Linear+LN+ReLU ┘
-```
-
-Learned attention weights: **Text 39.7% · Tabular 38.9% · Image 21.4%** — image carries the least signal, matching the AI-generated product photos in the dataset. Validated AUC: 0.81+.
-</details>
-
-<details>
-<summary><b>5. LightGBM + Optuna</b></summary><br>
-
-136 features (128 fused + 8 raw tabular). 50-trial TPE tuning on a held-out validation set; test set never touched. Baseline AUC 0.8292 → tuned **0.8302**. <code>scale_pos_weight</code> handles the 73/27 imbalance.
-</details>
-
-<details>
-<summary><b>6. SHAP + FastAPI Serving</b></summary><br>
-
-<code>TreeExplainer</code> collapses the 128 fused dims into one <code>image_text_fusion</code> SHAP value for human-readable attribution. FastAPI loads all models once at startup (~8s cold start); full pipeline runs in 200–500ms on a 4GB CPU droplet.
-</details>
+- **Single analysis** — paste any product listing, get risk verdict in <500ms
+- **Batch CSV upload** — analyze up to 10 products simultaneously, export results
+- **Compare mode** — side-by-side analysis of two products
+- **SHAP signal breakdown** — 5 AI signals with plain-English tooltip explanations
+- **Seller recommendations** — rule-based actionable advice from signal values
+- **History drawer** — localStorage persistence, search, group by day, CSV export
+- **Shareable results** — base64 URL hash encoding, paste link to share verdict
+- **Export PNG** — 1200×630 branded result card via html2canvas
+- **Portfolio dashboard** — `/dashboard` with recharts history visualization
+- **Smart review parser** — paste bulk reviews, auto-detects sentiment → star rating
+- **Keyboard shortcuts** — ⌘K palette, ⌘+Enter submit, ⌘+H history
+- **API health polling** — 30s interval, offline banner, graceful degraded mode
+- **Mobile responsive** — bottom sheet result, FAB, touch-optimized inputs
 
 ---
 
-## 🏗️ Architecture
+## Setup
 
-```
-Title + Description ──► MiniLM ──► desc_emb (384)
-Customer Reviews     ──► MiniLM (mean-pooled) ──► review_emb (384)
-                              │
-            review_desc_mismatch = 1 - cosine_sim ◄┘
-Product Image ──► CLIP ViT-B/32 ──► image_emb (512)
-Tabular features ──► [rating stats, price_anomaly, mismatch, has_clip]
-        │
-        ▼  PCA → 64-dim each · tabular → 8-dim (scaled)
-  PyTorch Attention Fusion (learned weights)
-        ▼
-  128-dim fused + 8-dim raw tab = 136 features
-        ▼
-  LightGBM (Optuna-tuned) ──► Return Probability
-        ▼
-  SHAP TreeExplainer ──► signal attribution ──► /predict response
-```
+### Frontend
 
----
-
-## ✨ Features
-
-- **Single analysis** — risk verdict in <500ms
-- **Batch CSV** — up to 10 products, exportable
-- **Compare mode** — side-by-side verdicts
-- **SHAP breakdown** — 5 signals, plain-English tooltips
-- **Seller recommendations** — rule-based, signal-driven
-- **History drawer** — localStorage, search, group-by-day, CSV export
-- **Shareable results** — base64 hash links
-- **PNG export** — branded 1200×630 result card
-- **Dashboard** — `/dashboard` with Recharts history view
-- **Smart review parser** — bulk paste → auto sentiment → star rating
-- **Keyboard shortcuts** — ⌘K palette, ⌘+Enter, ⌘+H
-- **API health polling** — 30s interval, offline banner, degraded mode
-- **Mobile responsive** — bottom sheet, FAB, touch-optimized
-
----
-
-## 🚀 Setup
-
-**Frontend**
 ```bash
 git clone https://github.com/IamShariqMukadam/ReturnSight
 cd ReturnSight/returnsight-frontend
 npm install
-cp .env.example .env.local   # set VITE_API_URL
+cp .env.example .env.local
+# Set VITE_API_URL=https://api.returnsight.me (or http://localhost:8000)
 npm run dev
 ```
 
-**Backend**
+### Backend
+
 ```bash
 cd ReturnSight
 python -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
-# place trained models in models/ (not committed — too large for GitHub)
+# Models must be in models/ directory (not committed — too large for GitHub)
 uvicorn api.main:app --host 0.0.0.0 --port 8000
 ```
 
----
+### API Contract
 
-## 🔌 API
-
-**POST** `/predict`
+**POST /predict**
 ```json
 {
   "title": "string",
@@ -227,57 +247,47 @@ uvicorn api.main:app --host 0.0.0.0 --port 8000
 
 ---
 
-## 🤔 Key Decisions
+## Key Engineering Decisions
 
-<details>
-<summary><b>Mean-pool reviews instead of concatenate?</b></summary><br>
-Concatenation hits MiniLM's 256-token ceiling — for products with 10+ reviews, most content past ~3 reviews got silently truncated. Mean-pooling has no ceiling.
-</details>
+**Why mean-pool reviews instead of concatenate?**  
+Concatenation hits `all-MiniLM-L6-v2`'s 256-token ceiling — for products with 10+ reviews, all content beyond ~3 reviews was silently truncated. Mean-pooling individual encodings has no ceiling and better represents the full review distribution.
 
-<details>
-<summary><b>Rate-based labels instead of count-based?</b></summary><br>
-1 return mention out of 3,933 reviews (0.025%) ≠ 1 out of 5 (20%). Rate-based thresholding (≥2%) removes the bias toward high-volume products.
-</details>
+**Why rate-based labels instead of count-based?**  
+A single return mention out of 3,933 reviews (0.025%) should not equal one mention out of 5 reviews (20%). Rate-based thresholding (≥2%) removes this statistical bias toward high-volume products.
 
-<details>
-<summary><b>LightGBM over an end-to-end neural net?</b></summary><br>
-136 features is small enough that GBTs beat neural classifiers here, and LightGBM gives SHAP compatibility for free — core to the product's value prop.
-</details>
+**Why LightGBM over neural end-to-end?**  
+The 136-dim feature vector is small enough that gradient-boosted trees outperform neural classifiers. LightGBM also gives SHAP compatibility out of the box, which is core to the product's value proposition.
 
-<details>
-<summary><b>Attention fusion over concatenation?</b></summary><br>
-Concatenation weighs every modality equally. Attention lets the model learn that AI-generated product photos carry less signal than review-description mismatch — matching domain knowledge.
-</details>
+**Why attention fusion instead of simple concatenation?**  
+Concatenation treats all modalities equally. Attention lets the model learn that image embeddings from AI-generated product photos carry less signal than review-description mismatch — which matches domain knowledge.
 
 ---
 
-## 📁 Structure
+## Repository Structure
 
 ```
 ReturnSight/
 ├── api/
-│   ├── main.py             # FastAPI app, lifespan model loading
-│   ├── inference.py        # Full inference pipeline
-│   ├── model_loader.py     # Global model state, AttentionFusion definition
-│   └── schemas.py          # Pydantic request/response models
+│   ├── main.py              # FastAPI app, lifespan model loading
+│   ├── inference.py         # Full inference pipeline
+│   ├── model_loader.py      # Global model state, AttentionFusion definition
+│   └── schemas.py           # Pydantic request/response models
 ├── returnsight-frontend/
 │   ├── src/
-│   │   ├── components/     # React UI
-│   │   ├── hooks/          # useAnalysis, useHistory, useApiHealth
-│   │   ├── store/          # Zustand state
-│   │   └── utils/          # shareUrl, exportImage, csvParser, sentimentDetector
+│   │   ├── components/      # React UI components
+│   │   ├── hooks/           # useAnalysis, useHistory, useApiHealth, etc.
+│   │   ├── store/           # Zustand global state
+│   │   └── utils/           # shareUrl, exportImage, csvParser, sentimentDetector
 │   └── package.json
-├── build_price_lookup.py
-├── extract_images.py
-├── patch_image_url.py
+├── build_price_lookup.py    # Generates category_price_median.pkl
+├── extract_images.py        # Extracts image URLs from HF metadata
+├── patch_image_url.py       # Patches image URLs into labeled parquet
 ├── requirements.txt
 └── README.md
 ```
 
 ---
 
-<div align="center">
+## License
 
-MIT License — built for e-commerce sellers, and as a portfolio piece in production ML engineering.
-
-</div>
+MIT — built for e-commerce sellers and as a portfolio project demonstrating production ML engineering.
