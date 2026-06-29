@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import ReviewSection from './ReviewSection'
 import Button from '../ui/Button'
 import { useToast } from '../../hooks/useToast'
+import { useAppStore } from '../../store/appStore'
 
 const SESSION_KEY = 'returnsight_form'
 const EXAMPLE = {
@@ -64,6 +65,7 @@ function SectionDivider({ label }) {
 export default function ProductForm({ onSubmit, stage, retryCountdown = 0, onLoadExample }) {
   const toast = useToast()
   const { inputProps, style } = useInputFocus()
+  const clearResult = useAppStore(s => s.clearResult)
   const submitIntentRef = useRef(false)
 
   const loadSession = () => { try { return JSON.parse(sessionStorage.getItem(SESSION_KEY) || 'null') } catch { return null } }
@@ -90,7 +92,7 @@ export default function ProductForm({ onSubmit, stage, retryCountdown = 0, onLoa
   }
 
   const loadExample = () => { setForm(EXAMPLE); onLoadExample?.() }
-  const reset = () => { setForm({ title:'',description:'',price:'',image_url:'',category:'Clothing_Shoes_and_Jewelry',reviews:[{text:'',rating:3}] }); sessionStorage.removeItem(SESSION_KEY) }
+  const reset = () => { setForm({ title:'',description:'',price:'',image_url:'',category:'Clothing_Shoes_and_Jewelry',reviews:[{text:'',rating:3}] }); sessionStorage.removeItem(SESSION_KEY); clearResult() }
 
   useEffect(() => {
     const trigger = () => { submitIntentRef.current = true; handleSubmit() }
