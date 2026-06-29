@@ -1,170 +1,228 @@
-<div align="center">
+# ReturnSight — AI Return Risk Predictor
 
-<img src="public/og-image.png" alt="ReturnSight" width="100%"/>
+> **Know the return risk before the return.** A production-grade, multimodal AI pipeline that predicts e-commerce product return probability from listing data and customer reviews — trained on 66M Amazon reviews.
 
-# ⟁ ReturnSight
-
-**610,879 products. No sampling. One model that reads listings like a buyer does.**
-
-[![AUC-ROC](https://img.shields.io/badge/AUC--ROC-0.7966-FF5C1A?style=for-the-badge)](/)
-[![Dataset](https://img.shields.io/badge/Products-610K-7C3AED?style=for-the-badge)](/)
-[![Return Rate](https://img.shields.io/badge/Return_Rate-22.32%25-EC4899?style=for-the-badge)](/)
-[![FastAPI](https://img.shields.io/badge/API-FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white)](/)
-[![React](https://img.shields.io/badge/UI-React_18-61DAFB?style=for-the-badge&logo=react&logoColor=black)](/)
-
-> *Paste a product listing. Get the return probability before you scale ad spend.*
-
-[**Live Demo →**](https://returnsight.vercel.app) &nbsp;·&nbsp; [**API Docs →**](https://api.returnsight.com/docs)
-
-</div>
+🔗 **Live Demo:** [returnsight.vercel.app](https://returnsight.vercel.app)  
+📡 **API:** [api.returnsight.me/docs](https://api.returnsight.me/docs)  
+📂 **Repo:** [github.com/IamShariqMukadam/ReturnSight](https://github.com/IamShariqMukadam/ReturnSight)
 
 ---
 
-## ⚡ What It Does
+## What it does
 
-```
-Seller pastes title + description + reviews + price
-                        ↓
-        ReturnSight reads it like a buyer would
-                        ↓
-         return_probability: 0.73  →  🔴 HIGH RISK
-         top_reason: "1-star rate above 25% threshold"
-         signal_breakdown: { avg_rating, one_star_pct, price_anomaly, ... }
-```
+E-commerce sellers typically discover return problems *after* scaling ad spend. ReturnSight moves that discovery to *before* publishing — analyzing a product listing and its reviews to output a 0–100% return probability score with signal-level attribution powered by SHAP values.
+
+Paste a product title, description, price, and customer reviews. Get a verdict in under 500ms.
 
 ---
 
-## 🏗️ Pipeline — 5 Days, End to End
+## Results
 
-| Day | Stage | What Actually Happened |
-|-----|-------|----------------------|
-| **1** | EDA & Labeling | Streamed 133 review chunks + 15 metadata chunks — no dataset ever held in RAM |
-| **2** | Embeddings | CLIP for images (512-dim) + MiniLM for text (384-dim) — with a non-obvious pooling fix |
-| **3** | Fusion + Model | PyTorch attention fusion → LightGBM on 136 features, tuned with Optuna (50 trials) |
-| **4** | Explainability | SHAP TreeExplainer — per-prediction signal breakdown, threshold sweep 0.30→0.80 |
-| **5** | API | FastAPI — validated to 4 decimal places against offline predictions |
-
----
-
-## 📊 Dataset
-
-```
-McAuley-Lab/Amazon-Reviews-2023  →  Clothing_Shoes_and_Jewelry
-```
-
-| Filter Applied | Reason |
+| Metric | Value |
 |---|---|
-| Verified purchases only | Remove noise |
-| Review text > 10 chars | Remove junk |
-| ≥ 5 reviews per product | Statistical floor |
-| Valid description + image metadata | Multimodal pipeline requirement |
+| Test AUC-ROC | **0.8302** |
+| Average Precision | **0.7022** |
+| Training data | 66M Amazon reviews (Clothing, Shoes & Jewelry) |
+| Unique products | ~611K |
+| Return rate in training | 27% |
+| CLIP image coverage | ~96% |
+| Inference latency | <500ms (CPU) |
+
+---
+
+## How it works — technical pipeline
+
+### 1. Label Engineering (leakage-free)
+
+The original naive approach — labeling returns from `avg_rating` and `one_star_pct` — caused fake AUC of **1.0000** because those features were then used in the model. Fixed by building labels from **explicit return-mention language** in raw review text using a regex pattern covering 14 distinct return/refund expressions (`"returned it"`, `"sending it back"`, `"requested a refund"`, etc.).
+
+Labels use a **rate-based threshold** (≥2% of reviews mention returns) rather than raw count, preventing bias toward high-volume products. This makes `avg_rating`, `one_star_pct`, `five_star_pct`, and `rating_std` leakage-free tabular features.
+
+### 2. Data Processing
+
+- **Source:** McAuley-Lab Amazon Reviews 2023 dataset (Clothing, Shoes & Jewelry), ~66M reviews, ~7.2M products
+- **Processing:** Chunked streaming (500K rows/chunk) on EC2 with incremental merge checkpointing — avoids OOM on large datasets
+- **Feature engineering:** `log_review_count`, `price_anomaly` (price ÷ category median), `rating_std` (computed via sum-of-squared-ratings aggregate across chunks), `review_desc_mismatch`
+
+### 3. Multimodal Embeddings
+
+**CLIP (image signal — 512-dim)**
+- `openai/clip-vit-base-patch32` encodes product images
+- Uses `vision_model` + `visual_projection` directly (not `get_image_features()`) to match the training path exactly and avoid version-specific API inconsistencies
+- L2-normalized for cosine similarity
+- ~96% image coverage; zero-vector fallback for missing images — attention layer learns to downweight
+
+**Sentence-Transformers (text signal — 384-dim)**
+- `all-MiniLM-L6-v2` encodes product descriptions and customer reviews
+- Key fix: reviews encoded **individually then mean-pooled** (not concatenated) — concatenation hit a hard 256-token ceiling that silently truncated most review content
+- `review_desc_mismatch = 1 − cosine_similarity(desc_emb, review_emb)` — measures gap between seller claims and buyer experience — strongest return predictor
+
+### 4. Attention Fusion (PyTorch)
+
+A custom 3-modality attention fusion layer projects CLIP (64-dim via PCA), text (64-dim via PCA), and tabular (8-dim) into a shared 128-dim space and learns per-sample attention weights:
 
 ```
-Before filters: ~29M reviews
-After filters:  610,879 products
+CLIP → Linear(64→128) + LayerNorm + ReLU  ┐
+Text → Linear(64→128) + LayerNorm + ReLU  ├─→ Softmax attention → Weighted sum → 128-dim fused
+Tab  → Linear( 8→128) + LayerNorm + ReLU  ┘
+                                            └→ Linear(128→64) → ReLU → Dropout(0.3) → Linear(64→1)
+```
 
-Label distribution:
-  🔴 Likely Return   136,329  (22.32%)
-  🟢 No Return       474,550  (77.68%)
+Trained with BCEWithLogitsLoss + `scale_pos_weight` for class imbalance. Validated AUC: **0.81+**
 
-CLIP image coverage: 586,524 / 610,879  →  96.0%
+Average learned attention weights confirm expected signal strength:
+- **Text: 0.397** (dominant)
+- **Tabular: 0.389**
+- **Image: 0.214** (weakest — AI-generated product photos contain little distinguishing information)
+
+### 5. LightGBM Classifier
+
+Final feature matrix: fused representation (128-dim) + raw tabular (8-dim) = **136 features**
+
+- Hyperparameter tuning via **Optuna** (50 trials, TPE sampler) on held-out validation set
+- Test set kept completely clean — never touched during tuning
+- Baseline AUC: 0.8292 → Tuned AUC: **0.8302**
+- `scale_pos_weight` handles 73/27 class imbalance
+
+### 6. SHAP Explainability
+
+`shap.TreeExplainer` on the LightGBM model. The 128 fused dimensions are collapsed to a single `image_text_fusion` SHAP value for human-readable attribution. Per-prediction explanations identify the dominant signal and generate seller-facing recommendations.
+
+### 7. FastAPI Serving
+
+- Lifespan context manager loads all models once at startup (~8s cold start)
+- Inference: encode text → CLIP image fetch → PCA reduce → attention fusion → LightGBM → SHAP → response
+- Latency: **~200–500ms** on CPU (DigitalOcean 4GB Droplet)
+- Full CORS, Pydantic schemas, 503 retry logic
+
+---
+
+## Architecture
+
+```
+Product Listing Input
+│
+├── Title + Description ──► sentence-transformer (all-MiniLM-L6-v2) ──► 384-dim desc_emb
+├── Customer Reviews    ──► sentence-transformer (mean-pool) ──────────► 384-dim review_emb
+│                                                                         │
+│    review_desc_mismatch = 1 - cosine_sim(desc_emb, review_emb) ◄───────┘
+│
+├── Product Image URL   ──► CLIP ViT-B/32 ──► 512-dim image_emb
+│
+└── Tabular Features    ──► [avg_rating, one_star_pct, five_star_pct,
+                             rating_std, log_review_count, price_anomaly,
+                             review_desc_mismatch, has_clip]
+
+         ↓ PCA (→64-dim each)          ↓ StandardScaler
+  [clip_64] [text_64] [tab_8]
+         ↓
+  PyTorch Attention Fusion Layer
+  (learned weights per modality)
+         ↓
+  128-dim fused representation
+         ↓
+  concat with raw tab_8  →  136-dim feature vector
+         ↓
+  LightGBM Classifier (Optuna-tuned)
+         ↓
+  Return Probability (0–100%)
+         ↓
+  SHAP TreeExplainer → signal attribution
+         ↓
+  FastAPI /predict response
 ```
 
 ---
 
-## 🏷️ Label Engineering — Rate, Not Count
+## Tech Stack
 
-The naive approach counts return-language mentions per product.  
-**The problem:** 15 mentions in 1,000 reviews (1.5%) looks riskier than 10 in 50 (20%).
+### ML / Backend
+| Component | Technology |
+|---|---|
+| Embeddings | CLIP ViT-B/32, all-MiniLM-L6-v2 |
+| Dimensionality reduction | PCA (scikit-learn) |
+| Fusion model | PyTorch (custom attention layer) |
+| Classifier | LightGBM |
+| Explainability | SHAP TreeExplainer |
+| Hyperparameter tuning | Optuna (TPE, 50 trials) |
+| API | FastAPI + Uvicorn |
+| Data processing | HuggingFace Datasets (pinned v3.x), pandas, pyarrow |
+| Compute | AWS EC2 (m6i.2xlarge + g4dn.xlarge), Kaggle GPU T4 |
 
-```python
-# Wrong
-likely_return = return_mention_count > threshold       # biased toward high-volume products
+### Frontend
+| Component | Technology |
+|---|---|
+| Framework | React 18 + Vite |
+| Styling | Tailwind CSS + CSS variables |
+| Animation | Framer Motion |
+| State | Zustand |
+| Data fetching | TanStack Query + axios |
+| Charts | Recharts |
+| Export | html2canvas |
+| CSV | PapaParse |
 
-# Right  
-likely_return = (return_mention_count / total_reviews) >= 0.02  # scale-invariant rate
-```
-
-Regex matched against **full review text**, not sampled — every mention captured regardless of position.
-
----
-
-## 🔤 Embedding Design — The Pooling Fix
-
-`all-MiniLM-L6-v2` has a **256-token hard limit**.
-
-```
-❌ Naive:  [review1 + review2 + review3 + ...]  →  truncate at 256 tokens
-           → Reviews 4–30 silently discarded
-
-✅ Ours:   encode(review1) → 384-dim
-           encode(review2) → 384-dim
-           ...
-           encode(review30) → 384-dim
-           mean_pool + renormalize → 1 × 384-dim
-           → All 30 reviews contribute equally
-```
-
-Also computed: `review_desc_mismatch = 1 − cosine_similarity(desc_emb, review_emb)`  
-→ Quantifies how much buyer experience diverges from seller claims.  
-→ Mean: `0.4957` | Range: `0.1550 – 1.1036`
-
----
-
-## 🧠 Attention Fusion — Learned Weights, Not Guessed
-
-Three modalities. Instead of hardcoding how much each matters — the model learns it.
-
-```
-image_emb  (512→64 PCA→128 proj) ─┐
-text_emb   (384→64 PCA→128 proj) ─┼──► softmax attention ──► 128-dim fused vector
-tabular    (8 features → 128 proj)─┘
-
-Final input to LightGBM:  fused(128) + raw_tabular(8)  =  136 features
-```
-
-**What the model decided:**
-
-```
-📷 Image      ████░░░░░░░░░░░░░░░░  13.2%
-📝 Text       ██████████████████░░  49.8%   ← buyer language dominates
-📈 Tabular    ██████████████░░░░░░  37.0%   ← ratings + price signal
-```
-
-> Images are the weakest signal for clothing. A product photo doesn't tell you it runs 2 sizes small.
+### Infrastructure
+| Component | Technology |
+|---|---|
+| Frontend hosting | Vercel |
+| Backend hosting | DigitalOcean Droplet (4GB RAM) |
+| Process management | systemd |
+| Reverse proxy | nginx |
+| SSL | Let's Encrypt (certbot) |
+| Domain | Namecheap (.me via GitHub Student Pack) |
 
 ---
 
-## 📈 Results
+## Features
 
-| Metric | Score |
-|--------|-------|
-| **AUC-ROC** | **0.7966** |
-| **Average Precision** | **0.5625** |
-| No-Return Precision | 0.90 |
-| No-Return Recall | 0.73 |
-| Likely-Return Precision | 0.43 |
-| Likely-Return Recall | 0.70 |
-
-Pre-tuning (Optuna 50 trials): `0.7947 AUC / 0.5597 AP`  
-Post-tuning: `0.7966 AUC / 0.5625 AP`
+- **Single analysis** — paste any product listing, get risk verdict in <500ms
+- **Batch CSV upload** — analyze up to 10 products simultaneously, export results
+- **Compare mode** — side-by-side analysis of two products
+- **SHAP signal breakdown** — 5 AI signals with plain-English tooltip explanations
+- **Seller recommendations** — rule-based actionable advice from signal values
+- **History drawer** — localStorage persistence, search, group by day, CSV export
+- **Shareable results** — base64 URL hash encoding, paste link to share verdict
+- **Export PNG** — 1200×630 branded result card via html2canvas
+- **Portfolio dashboard** — `/dashboard` with recharts history visualization
+- **Smart review parser** — paste bulk reviews, auto-detects sentiment → star rating
+- **Keyboard shortcuts** — ⌘K palette, ⌘+Enter submit, ⌘+H history
+- **API health polling** — 30s interval, offline banner, graceful degraded mode
+- **Mobile responsive** — bottom sheet result, FAB, touch-optimized inputs
 
 ---
 
-## 🔌 API
+## Setup
 
-```
-GET  /health
-POST /predict
+### Frontend
+
+```bash
+git clone https://github.com/IamShariqMukadam/ReturnSight
+cd ReturnSight/returnsight-frontend
+npm install
+cp .env.example .env.local
+# Set VITE_API_URL=https://api.returnsight.me (or http://localhost:8000)
+npm run dev
 ```
 
-**Request**
+### Backend
+
+```bash
+cd ReturnSight
+python -m venv venv && source venv/bin/activate
+pip install -r requirements.txt
+# Models must be in models/ directory (not committed — too large for GitHub)
+uvicorn api.main:app --host 0.0.0.0 --port 8000
+```
+
+### API Contract
+
+**POST /predict**
 ```json
 {
-  "title": "Women's Floral Midi Dress",
-  "description": "Lightweight chiffon, true to size...",
-  "reviews": [{ "text": "Runs 2 sizes small, returned it.", "rating": 1 }],
-  "price": 34.99,
+  "title": "string",
+  "description": "string",
+  "reviews": [{ "text": "string", "rating": 1 }],
+  "price": 29.99,
   "image_url": "https://...",
   "category": "Clothing_Shoes_and_Jewelry"
 }
@@ -176,94 +234,60 @@ POST /predict
   "return_probability": 0.73,
   "risk_level": "High",
   "signal_breakdown": {
-    "image_text_fusion": 0.18,
-    "avg_rating": 0.31,
-    "one_star_pct": 0.67,
-    "price_anomaly": 0.12,
-    "review_mismatch": 0.44
+    "image_text_fusion": 0.12,
+    "avg_rating": -0.08,
+    "one_star_pct": 0.21,
+    "price_anomaly": 0.04,
+    "review_mismatch": 0.18
   },
-  "top_reason": "1-star rate above 25% threshold",
-  "latency_ms": 214
+  "top_reason": "Reviews contradict product description (mismatch: 0.72)",
+  "latency_ms": 184.5
 }
 ```
 
-Risk thresholds: `Low < 0.35` · `Medium < 0.65` · `High ≥ 0.65`
+---
+
+## Key Engineering Decisions
+
+**Why mean-pool reviews instead of concatenate?**  
+Concatenation hits `all-MiniLM-L6-v2`'s 256-token ceiling — for products with 10+ reviews, all content beyond ~3 reviews was silently truncated. Mean-pooling individual encodings has no ceiling and better represents the full review distribution.
+
+**Why rate-based labels instead of count-based?**  
+A single return mention out of 3,933 reviews (0.025%) should not equal one mention out of 5 reviews (20%). Rate-based thresholding (≥2%) removes this statistical bias toward high-volume products.
+
+**Why LightGBM over neural end-to-end?**  
+The 136-dim feature vector is small enough that gradient-boosted trees outperform neural classifiers. LightGBM also gives SHAP compatibility out of the box, which is core to the product's value proposition.
+
+**Why attention fusion instead of simple concatenation?**  
+Concatenation treats all modalities equally. Attention lets the model learn that image embeddings from AI-generated product photos carry less signal than review-description mismatch — which matches domain knowledge.
 
 ---
 
-## ✅ Serving Validation
-
-> The hardest part isn't training. It's making sure serving produces the same number.
-
-- ✅ Same mean-pool + renormalize as training (not a shortcut path)
-- ✅ `price_anomaly` from 32-category lookup table, not a global median  
-- ✅ CLIP extracted via `vision_model → visual_projection` (the high-level path crashes on this transformers version)
-- ✅ Validated on **15 real held-out products** across full probability range
-- ✅ Several predictions **exact to 4 decimal places**
-- ✅ **Zero risk-category flips**
-
----
-
-## 🏛️ Infrastructure
-
-| Day | Instance | Why |
-|-----|----------|-----|
-| Day 1 | AWS EC2 `m6i.2xlarge` (CPU) | Streaming EDA — no GPU needed |
-| Days 2–5 | AWS EC2 `g4dn.xlarge` (T4 GPU) | CLIP embeddings + model training |
-
-Jobs ran unattended via `tmux`. Checkpointed at every major step.
-
----
-
-## 🚧 Honest Limitations
-
-| Limitation | Details |
-|---|---|
-| Proxy label | Return-language in reviews ≠ actual logistics return data |
-| Image ceiling | CLIP at 13.2% weight — don't oversell it for this category |
-| Static price lookup | Needs periodic refresh as category prices shift |
-| AUC ceiling | ~0.80 is the honest limit without real return/fit data from Amazon |
-
----
-
-## 🗂️ Structure
+## Repository Structure
 
 ```
 ReturnSight/
 ├── api/
-│   ├── main.py              FastAPI app
-│   ├── inference.py         Full inference pipeline
-│   ├── model_loader.py      Loads artifacts on startup
-│   └── schemas.py           Pydantic models
-├── day1_eda_labeling.py     Chunked streaming + label engineering
-├── day2_embeddings.py       CLIP + MiniLM embeddings
-├── day3_fusion_lgbm.py      Attention fusion + LightGBM + Optuna
-├── day4_explainability.py   SHAP + threshold sweep
-├── returnsight-frontend/    React 18 + Vite frontend
-└── models/                  Trained artifacts (Git LFS)
+│   ├── main.py              # FastAPI app, lifespan model loading
+│   ├── inference.py         # Full inference pipeline
+│   ├── model_loader.py      # Global model state, AttentionFusion definition
+│   └── schemas.py           # Pydantic request/response models
+├── returnsight-frontend/
+│   ├── src/
+│   │   ├── components/      # React UI components
+│   │   ├── hooks/           # useAnalysis, useHistory, useApiHealth, etc.
+│   │   ├── store/           # Zustand global state
+│   │   └── utils/           # shareUrl, exportImage, csvParser, sentimentDetector
+│   └── package.json
+├── build_price_lookup.py    # Generates category_price_median.pkl
+├── extract_images.py        # Extracts image URLs from HF metadata
+├── patch_image_url.py       # Patches image URLs into labeled parquet
+├── requirements.txt
+└── README.md
 ```
 
 ---
 
-## 🚀 Quick Start
+## License
 
-```bash
-# Backend
-cd api && pip install -r requirements.txt
-uvicorn main:app --host 0.0.0.0 --port 8000
-
-# Frontend
-cd returnsight-frontend
-cp .env.example .env.local   # set VITE_API_URL
-npm install && npm run dev
-```
-
----
-
-<div align="center">
-
-Built by **Shariq Mukadam** · BCA, Bharati Vidyapeeth University, Pune
-
-[GitHub](https://github.com/IamShariqMukadam) · [LinkedIn](https://linkedin.com/in/shariqmukadam) · [Live Demo](https://returnsight.vercel.app)
-
-</div>
+MIT — built for e-commerce sellers and as a portfolio project demonstrating production ML engineering.
