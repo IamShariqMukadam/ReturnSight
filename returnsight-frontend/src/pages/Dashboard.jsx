@@ -6,6 +6,16 @@ import { Badge } from '../components/ui/Badge'
 
 const COLORS = { High: '#EF4444', Medium: '#F59E0B', Low: '#22C55E' }
 
+const PieTooltip = ({ active, payload }) => {
+  if (!active || !payload?.length) return null
+  const { name, value } = payload[0]
+  return (
+    <div style={{ background: '#13141C', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8, padding: '8px 12px' }}>
+      <span style={{ color: COLORS[name], fontSize: 12, fontWeight: 600 }}>{name}: {value}</span>
+    </div>
+  )
+}
+
 export default function Dashboard() {
   const navigate = useNavigate()
   const { history } = useHistory()
@@ -95,7 +105,7 @@ export default function Dashboard() {
                 <Pie data={pieData} cx={75} cy={75} innerRadius={45} outerRadius={70} dataKey="value" paddingAngle={3}>
                   {pieData.map(e => <Cell key={e.name} fill={COLORS[e.name]} />)}
                 </Pie>
-                <Tooltip contentStyle={tooltipStyle} />
+                <Tooltip content={<PieTooltip />} />
               </PieChart>
             </ResponsiveContainer>
             <div className="space-y-2">
