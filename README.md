@@ -1,6 +1,13 @@
 <div align="center">
 
-<img src="public/og-image.png" alt="ReturnSight" width="100%"/>
+```
+██████╗ ███████╗████████╗██╗   ██╗██████╗ ███╗   ██╗███████╗██╗ ██████╗ ██╗  ██╗████████╗
+██╔══██╗██╔════╝╚══██╔══╝██║   ██║██╔══██╗████╗  ██║██╔════╝██║██╔════╝ ██║  ██║╚══██╔══╝
+██████╔╝█████╗     ██║   ██║   ██║██████╔╝██╔██╗ ██║███████╗██║██║  ███╗███████║   ██║   
+██╔══██╗██╔══╝     ██║   ██║   ██║██╔══██╗██║╚██╗██║╚════██║██║██║   ██║██╔══██║   ██║   
+██║  ██║███████╗   ██║   ╚██████╔╝██║  ██║██║ ╚████║███████║██║╚██████╔╝██║  ██║   ██║   
+╚═╝  ╚═╝╚══════╝   ╚═╝    ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═══╝╚══════╝╚═╝ ╚═════╝ ╚═╝  ╚═╝   ╚═╝   
+```
 
 # ⟁ ReturnSight
 
@@ -323,10 +330,6 @@ npm install && npm run dev        # → http://localhost:5173
 
 <div align="center">
 
-Built by **Shariq Mukadam** · BCA, Bharati Vidyapeeth University, Pune · CGPA 8.61
-
-[GitHub](https://github.com/IamShariqMukadam) · [LinkedIn](https://linkedin.com/in/shariqmukadam) · [Live Demo](https://returnsight.vercel.app)
-
-*66M reviews · 611K products · 0 sampling*
+Built by **Shariq Mukadam** · *66M reviews · 611K products · 0 sampling*
 
 </div>
