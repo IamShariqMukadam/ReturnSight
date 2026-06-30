@@ -75,6 +75,10 @@ Processing: Chunked streaming (500K rows/chunk) with incremental merge
 Features:   log_review_count, price_anomaly (price ÷ category median),
             rating_std (sum-of-squared-ratings aggregate across chunks),
             review_desc_mismatch
+Compute:    AWS EC2 m6i.2xlarge (CPU) for Day 1 streaming — no GPU needed
+            AWS EC2 g4dn.xlarge (T4 GPU) + Kaggle T4 for Days 2–3 embeddings
+            Long-running jobs managed via tmux with checkpoint resume
+
 ```
 
 ### 3. Multimodal Embeddings
@@ -129,6 +133,8 @@ Baseline AUC: 0.8292  →  Tuned AUC: 0.8302
 ```
 Inference path:  encode text → CLIP image fetch → PCA reduce
                  → attention fusion → LightGBM → SHAP → response
+Startup:         FastAPI lifespan context manager loads all models once (~8s cold start)
+                 Models stay in memory — no per-request reload
 Latency:         ~200–500ms on CPU
 ```
 
@@ -275,6 +281,8 @@ POST /predict  →  { return_probability, risk_level, signal_breakdown, top_reas
 | Layer | Technology |
 |---|---|
 | Frontend | ![Vercel](https://img.shields.io/badge/Vercel-000000?style=flat-square&logo=vercel&logoColor=white) |
+| Backend | ![DigitalOcean](https://img.shields.io/badge/DigitalOcean_4GB_Droplet-0080FF?style=flat-square&logo=digitalocean&logoColor=white) |
+| Training Compute | ![AWS](https://img.shields.io/badge/AWS_EC2_m6i+g4dn-FF9900?style=flat-square&logo=amazonaws&logoColor=white) ![Kaggle](https://img.shields.io/badge/Kaggle_GPU_T4-20BEFF?style=flat-square&logo=kaggle&logoColor=white) |
 | Reverse Proxy | ![nginx](https://img.shields.io/badge/nginx-009639?style=flat-square&logo=nginx&logoColor=white) |
 | SSL | ![Certbot](https://img.shields.io/badge/Let's_Encrypt_certbot-003A70?style=flat-square) |
 | Domain | ![Namecheap](https://img.shields.io/badge/Namecheap_.me-DE3723?style=flat-square) |
@@ -311,7 +319,7 @@ ReturnSight/
 │   ├── src/hooks/           useAnalysis, useHistory, useApiHealth, useKeyboard
 │   ├── src/store/           Zustand app store
 │   └── src/utils/           shareUrl, csvParser, sentimentDetector, exportImage
-└── models/                  Trained artifacts
+└── models/                  Trained artifacts (Git LFS — .npy, .parquet, .pkl, .pt)
     ├── lgbm_classifier.pkl
     ├── fusion_attention.pt
     ├── pca_clip.pkl · pca_text.pkl · scaler.pkl
