@@ -1,5 +1,3 @@
-
-<div align="center">
 ```
 ██████╗ ███████╗████████╗██╗   ██╗██████╗ ███╗   ██╗███████╗██╗ ██████╗ ██╗  ██╗████████╗
 ██╔══██╗██╔════╝╚══██╔══╝██║   ██║██╔══██╗████╗  ██║██╔════╝██║██╔════╝ ██║  ██║╚══██╔══╝
@@ -8,7 +6,7 @@
 ██║  ██║███████╗   ██║   ╚██████╔╝██║  ██║██║ ╚████║███████║██║╚██████╔╝██║  ██║   ██║   
 ╚═╝  ╚═╝╚══════╝   ╚═╝    ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═══╝╚══════╝╚═╝ ╚═════╝ ╚═╝  ╚═╝   ╚═╝   
 ```
-
+<div align="center">
 **Multi-modal ML system that predicts e-commerce return risk from product listings + reviews.**  
 **Built end-to-end on 66M Amazon reviews. No sampling. No shortcuts.**
 
@@ -21,9 +19,9 @@
 
 ## 📸 Screenshots
 
-| Landing Page | Dashboard |
-|---|---|
-| ![Landing](/assets/returnsight.vercel.app_.png) | ![Dashboard](/assets/returnsight.vercel.app_%20(1).png) |
+![Landing Page](assets/screenshot-landing.png)
+
+![Dashboard](assets/screenshot-dashboard.png)
 
 
 ## ⚡ What It Does
