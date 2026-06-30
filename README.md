@@ -15,8 +15,8 @@
 
 <br/>
 
-[![Live Demo](https://img.shields.io/badge/Live_Demo-returnsight.vercel.app-000000?style=for-the-badge&logo=vercel&logoColor=white)](https://returnsight.vercel.app)
-[![API Docs](https://img.shields.io/badge/API_Docs-api.returnsight.me%2Fdocs-000000?style=for-the-badge&logo=fastapi&logoColor=white)](https://api.returnsight.shariqmukadam.me/docs#)
+[![Live Demo](https://img.shields.io/badge/Live_Demo-returnsight.vercel.app-FF5C1A?style=for-the-badge&logo=vercel&logoColor=white&labelColor=000000)](https://returnsight.vercel.app)
+[![API Docs](https://img.shields.io/badge/API_Docs-api.returnsight.me%2Fdocs-009688?style=for-the-badge&logo=fastapi&logoColor=white&labelColor=000000)](https://api.returnsight.shariqmukadam.me/docs#)
 
 </div>
 
