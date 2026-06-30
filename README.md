@@ -19,9 +19,9 @@
 
 ## 📸 Screenshots
 
-![Landing Page](assets/screenshot-landing.png)
+![Landing Page](/assets/returnsight.vercel.app_.png)
 
-![Dashboard](assets/screenshot-dashboard.png)
+![Dashboard](/assets/returnsight.vercel.app_%20(1).png)
 
 
 ## ⚡ What It Does
