@@ -1,14 +1,15 @@
-```
+<div align="center">
 ██████╗ ███████╗████████╗██╗   ██╗██████╗ ███╗   ██╗███████╗██╗ ██████╗ ██╗  ██╗████████╗
 ██╔══██╗██╔════╝╚══██╔══╝██║   ██║██╔══██╗████╗  ██║██╔════╝██║██╔════╝ ██║  ██║╚══██╔══╝
-██████╔╝█████╗     ██║   ██║   ██║██████╔╝██╔██╗ ██║███████╗██║██║  ███╗███████║   ██║   
-██╔══██╗██╔══╝     ██║   ██║   ██║██╔══██╗██║╚██╗██║╚════██║██║██║   ██║██╔══██║   ██║   
-██║  ██║███████╗   ██║   ╚██████╔╝██║  ██║██║ ╚████║███████║██║╚██████╔╝██║  ██║   ██║   
-╚═╝  ╚═╝╚══════╝   ╚═╝    ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═══╝╚══════╝╚═╝ ╚═════╝ ╚═╝  ╚═╝   ╚═╝   
-```
-<div align="center">
-**Multi-modal ML system that predicts e-commerce return risk from product listings + reviews.**  
+██████╔╝█████╗     ██║   ██║   ██║██████╔╝██╔██╗ ██║███████╗██║██║  ███╗███████║   ██║
+██╔══██╗██╔══╝     ██║   ██║   ██║██╔══██╗██║╚██╗██║╚════██║██║██║   ██║██╔══██║   ██║
+██║  ██║███████╗   ██║   ╚██████╔╝██║  ██║██║ ╚████║███████║██║╚██████╔╝██║  ██║   ██║
+╚═╝  ╚═╝╚══════╝   ╚═╝    ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═══╝╚══════╝╚═╝ ╚═════╝ ╚═╝  ╚═╝   ╚═╝
+**Multi-modal ML system that predicts e-commerce return risk from product listings + reviews.**
+
 **Built end-to-end on 66M Amazon reviews. No sampling. No shortcuts.**
+
+<br/>
 
 [![Live Demo](https://img.shields.io/badge/Live_Demo-returnsight.vercel.app-FF5C1A?style=for-the-badge&logo=vercel&logoColor=white)](https://returnsight.vercel.app)
 [![API Docs](https://img.shields.io/badge/API_Docs-api.returnsight.me%2Fdocs-009688?style=for-the-badge&logo=fastapi&logoColor=white)](https://api.returnsight.me/docs)
